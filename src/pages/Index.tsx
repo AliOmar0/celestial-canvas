@@ -1,16 +1,17 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from "react";
+import { GalaxyScene } from "@/components/galaxy/GalaxyScene";
+import { ControlPanel } from "@/components/galaxy/ControlPanel";
+import { DEFAULT_SETTINGS, type GalaxySettings } from "@/components/galaxy/types";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
+  const [settings, setSettings] = useState<GalaxySettings>(DEFAULT_SETTINGS);
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="w-screen h-screen overflow-hidden" style={{ background: "#000" }}>
+      <GalaxyScene settings={settings} />
+      <ControlPanel settings={settings} onChange={setSettings} />
     </div>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
