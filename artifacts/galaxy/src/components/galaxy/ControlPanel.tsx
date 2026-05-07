@@ -24,11 +24,16 @@ import {
   Volume2,
   Gauge,
   Tag,
+  Wind,
+  Cloudy,
+  Stars,
+  Download,
 } from "lucide-react";
 
 interface Props {
   settings: GalaxySettings;
   onChange: (s: GalaxySettings) => void;
+  onSnapshot?: () => void;
 }
 
 const sliderClass =
@@ -84,7 +89,45 @@ function ToggleRow({
   );
 }
 
-export function ControlPanel({ settings, onChange }: Props) {
+/* ---------- LiveSlider declared at module scope so it doesn't remount on every parent render ---------- */
+interface LiveSliderProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  formatter?: (v: number) => string;
+}
+
+function LiveSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange: onLiveChange,
+  formatter = (v: number) => v.toString(),
+}: LiveSliderProps) {
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between text-sm text-white/70">
+        <span>{label}</span>
+        <span className="text-white/50">{formatter(value)}</span>
+      </div>
+      <Slider
+        min={min}
+        max={max}
+        step={step}
+        value={[value]}
+        onValueChange={([v]) => onLiveChange(v)}
+        className={sliderClass}
+      />
+    </div>
+  );
+}
+
+export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(!isMobile);
 
@@ -113,39 +156,6 @@ export function ControlPanel({ settings, onChange }: Props) {
 
   const reset = () => onChange({ ...DEFAULT_SETTINGS });
 
-  const LiveSlider = ({
-    label,
-    value,
-    min,
-    max,
-    step,
-    onChange: onLiveChange,
-    formatter = (v: number) => v.toString(),
-  }: {
-    label: string;
-    value: number;
-    min: number;
-    max: number;
-    step: number;
-    onChange: (v: number) => void;
-    formatter?: (v: number) => string;
-  }) => (
-    <div className="space-y-2">
-      <div className="flex justify-between text-sm text-white/70">
-        <span>{label}</span>
-        <span className="text-white/50">{formatter(value)}</span>
-      </div>
-      <Slider
-        min={min}
-        max={max}
-        step={step}
-        value={[value]}
-        onValueChange={([v]) => onLiveChange(v)}
-        className={sliderClass}
-      />
-    </div>
-  );
-
   const panelContent = (
     <div className="flex flex-col gap-6 p-6 overflow-y-auto h-full">
       <div className="flex items-center gap-2">
@@ -171,6 +181,15 @@ export function ControlPanel({ settings, onChange }: Props) {
           <RotateCcw className="w-3.5 h-3.5" />
           Reset
         </button>
+        {onSnapshot && (
+          <button
+            onClick={onSnapshot}
+            className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white hover:from-indigo-500 hover:to-fuchsia-500 transition-all"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Save Snapshot (PNG)
+          </button>
+        )}
       </section>
 
       {/* Presets */}
@@ -332,6 +351,22 @@ export function ControlPanel({ settings, onChange }: Props) {
         />
 
         <ToggleRow
+          icon={<Wind className="w-3.5 h-3.5" />}
+          label="Soft Particles"
+          active={settings.softParticles}
+          onToggle={() => update("softParticles", !settings.softParticles)}
+          activeColor="bg-cyan-600 hover:bg-cyan-500"
+        />
+
+        <ToggleRow
+          icon={<Cloudy className="w-3.5 h-3.5" />}
+          label="Dust Lanes"
+          active={settings.dustLanes}
+          onToggle={() => update("dustLanes", !settings.dustLanes)}
+          activeColor="bg-stone-600 hover:bg-stone-500"
+        />
+
+        <ToggleRow
           icon={<Circle className="w-3.5 h-3.5" />}
           label="Black Hole"
           active={settings.blackHole}
@@ -345,6 +380,14 @@ export function ControlPanel({ settings, onChange }: Props) {
           active={settings.nebulaBackground}
           onToggle={() => update("nebulaBackground", !settings.nebulaBackground)}
           activeColor="bg-purple-600 hover:bg-purple-500"
+        />
+
+        <ToggleRow
+          icon={<Stars className="w-3.5 h-3.5" />}
+          label="Distant Galaxies"
+          active={settings.distantGalaxies}
+          onToggle={() => update("distantGalaxies", !settings.distantGalaxies)}
+          activeColor="bg-violet-600 hover:bg-violet-500"
         />
 
         <ToggleRow

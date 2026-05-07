@@ -70,6 +70,9 @@ export interface GalaxySettings {
   ambientSound: boolean;
   adaptiveQuality: boolean;
   regionLabels: boolean;
+  softParticles: boolean;
+  dustLanes: boolean;
+  distantGalaxies: boolean;
 }
 
 export const DEFAULT_SETTINGS: GalaxySettings = {
@@ -91,6 +94,9 @@ export const DEFAULT_SETTINGS: GalaxySettings = {
   ambientSound: false,
   adaptiveQuality: true,
   regionLabels: false,
+  softParticles: false,
+  dustLanes: false,
+  distantGalaxies: false,
 };
 
 export type GalaxyPresetKey = "spiral" | "barred" | "compact" | "sparse";

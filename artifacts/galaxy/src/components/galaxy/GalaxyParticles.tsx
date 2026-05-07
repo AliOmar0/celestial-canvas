@@ -39,13 +39,16 @@ const fragmentShader = `
   uniform float uDensityFactor;
   uniform float uBrightness;
   uniform float uBloom;
+  uniform float uSoft;
 
   void main() {
     float dist = length(gl_PointCoord - 0.5);
     float finalBrightness = vBrightness * uDensityFactor * uBrightness * uBloom;
     
     // Smooth alpha mask instead of discard for better performance
-    float alphaMask = smoothstep(0.5, 0.45, dist);
+    // Wider falloff when soft particles are enabled — fuzzier glow
+    float falloffStart = mix(0.45, 0.05, uSoft);
+    float alphaMask = smoothstep(0.5, falloffStart, dist);
     if (alphaMask < 0.001) discard;
 
     if (vType < 0.5) {
@@ -53,6 +56,14 @@ const fragmentShader = `
       // Optimized falloff: combination of a sharp peak and a soft aura
       float intensity = (exp(-dist * 12.0) * 0.8 + exp(-dist * 4.0) * 0.2) * alphaMask;
       vec3 col = mix(vColor, vec3(1.0), exp(-dist * 20.0) * 0.9);
+      // Color-shift bloom: hot pixels warmer, dim pixels cooler (mimics overexposed cameras)
+      float bloomT = (uBloom - 1.0);
+      if (bloomT > 0.0) {
+        vec3 warmTint = vec3(1.0, 0.85, 0.65);
+        vec3 coolTint = vec3(0.7, 0.85, 1.1);
+        vec3 shift = mix(coolTint, warmTint, smoothstep(0.0, 0.6, intensity * vBrightness));
+        col = mix(col, col * shift, clamp(bloomT * 0.5, 0.0, 0.6));
+      }
       gl_FragColor = vec4(col, intensity * finalBrightness);
     } else if (vType < 1.5) {
       // GAS/NEBULA RENDERING (HII Regions)
@@ -212,6 +223,7 @@ export function GalaxyParticles({ settings }: Props) {
       materialRef.current.uniforms.uDensityFactor.value = 60000 / count;
       materialRef.current.uniforms.uBrightness.value = settings.brightness;
       materialRef.current.uniforms.uBloom.value = settings.bloom ? 2.4 : 1.0;
+      materialRef.current.uniforms.uSoft.value = settings.softParticles ? 1.0 : 0.0;
     }
   });
 
@@ -235,6 +247,7 @@ export function GalaxyParticles({ settings }: Props) {
             uDensityFactor: { value: 1.0 },
             uBrightness: { value: 1.0 },
             uBloom: { value: 1.0 },
+            uSoft: { value: 0.0 },
           }}
           transparent
           depthWrite={false}

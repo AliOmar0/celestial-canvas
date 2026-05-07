@@ -1,9 +1,9 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html } from "@react-three/drei";
+import { OrbitControls, Html, Billboard } from "@react-three/drei";
 import { GalaxyParticles } from "./GalaxyParticles";
 import { Starfield } from "./Starfield";
 import { Galaxy2D } from "./Galaxy2D";
-import type { GalaxySettings } from "./types";
+import { COLOR_THEMES, type GalaxySettings } from "./types";
 import {
   Component,
   ReactNode,
@@ -85,7 +85,9 @@ function FPSCounter() {
   );
 }
 
-const accretionVertex = `
+/* ---------- BLACK HOLE — soft, theme-tinted, fits the particle aesthetic ---------- */
+
+const billboardVertex = `
   varying vec2 vUv;
   void main() {
     vUv = uv;
@@ -93,96 +95,182 @@ const accretionVertex = `
   }
 `;
 
-const accretionFragment = `
-  varying vec2 vUv;
-  uniform float uTime;
-  void main() {
-    float r = vUv.x;
-    float ang = vUv.y * 6.28318;
-    float swirl = sin(ang * 6.0 + uTime * 1.2 + r * 18.0) * 0.5 + 0.5;
-    swirl = mix(0.6, 1.0, swirl);
-    float inner = smoothstep(0.0, 0.18, r);
-    float outer = 1.0 - smoothstep(0.55, 1.0, r);
-    float bright = inner * outer;
-    vec3 hot = vec3(1.0, 0.95, 0.7);
-    vec3 mid = vec3(1.0, 0.55, 0.15);
-    vec3 cool = vec3(0.65, 0.15, 0.05);
-    vec3 col = mix(hot, mid, smoothstep(0.0, 0.35, r));
-    col = mix(col, cool, smoothstep(0.45, 1.0, r));
-    col *= swirl;
-    float alpha = bright * 0.95;
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
-
 const haloFragment = `
   varying vec2 vUv;
+  uniform vec3 uColor;
   void main() {
     float d = length(vUv - 0.5) * 2.0;
-    float a = 1.0 - smoothstep(0.0, 1.0, d);
-    a = pow(a, 2.5) * 0.6;
-    vec3 col = mix(vec3(1.0, 0.6, 0.2), vec3(0.4, 0.1, 0.05), d);
-    gl_FragColor = vec4(col, a);
+    if (d > 1.0) discard;
+    float halo = pow(1.0 - d, 2.6) * 0.55;
+    float rim = smoothstep(0.18, 0.28, d) * (1.0 - smoothstep(0.28, 0.5, d)) * 0.5;
+    float a = halo + rim;
+    gl_FragColor = vec4(uColor, a);
   }
 `;
 
-function BlackHole() {
-  const diskRef = useRef<THREE.Mesh>(null);
-  const diskMatRef = useRef<THREE.ShaderMaterial>(null);
-  const photonRef = useRef<THREE.Mesh>(null);
-  const { camera } = useThree();
+function BlackHole({ themeKey }: { themeKey: string }) {
+  const theme = COLOR_THEMES[themeKey] || COLOR_THEMES.andromeda;
   const haloRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+  const haloColor = useMemo(
+    () => new THREE.Vector3(theme.core[0], theme.core[1], theme.core[2]),
+    [theme]
+  );
 
-  useFrame((_, delta) => {
-    if (diskRef.current) diskRef.current.rotation.z += delta * 0.4;
-    if (photonRef.current) photonRef.current.rotation.z -= delta * 0.8;
-    if (diskMatRef.current) diskMatRef.current.uniforms.uTime.value += delta;
+  useFrame(() => {
     if (haloRef.current) haloRef.current.lookAt(camera.position);
   });
 
   return (
     <group>
-      {/* Soft halo billboard behind everything */}
+      {/* Soft theme-tinted halo, billboarded */}
       <mesh ref={haloRef} renderOrder={-1}>
-        <planeGeometry args={[5, 5]} />
+        <planeGeometry args={[3.5, 3.5]} />
         <shaderMaterial
-          vertexShader={accretionVertex}
+          vertexShader={billboardVertex}
           fragmentShader={haloFragment}
+          uniforms={{ uColor: { value: haloColor } }}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      {/* Event horizon — pure black sphere */}
+      {/* Event horizon — pure black void */}
       <mesh>
-        <sphereGeometry args={[0.55, 64, 64]} />
+        <sphereGeometry args={[0.4, 32, 32]} />
         <meshBasicMaterial color="#000" />
-      </mesh>
-
-      {/* Accretion disk — shader-based radial gradient ring */}
-      <mesh ref={diskRef} rotation={[Math.PI / 2.3, 0, 0]}>
-        <ringGeometry args={[0.7, 2.4, 128, 1]} />
-        <shaderMaterial
-          ref={diskMatRef}
-          vertexShader={accretionVertex}
-          fragmentShader={accretionFragment}
-          uniforms={{ uTime: { value: 0 } }}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-
-      {/* Photon ring — thin bright torus near the horizon */}
-      <mesh ref={photonRef} rotation={[Math.PI / 2.3, 0, 0]}>
-        <torusGeometry args={[0.68, 0.012, 16, 128]} />
-        <meshBasicMaterial color="#fff5cc" toneMapped={false} transparent opacity={0.95} />
       </mesh>
     </group>
   );
 }
+
+/* ---------- DUST LANES — multiply-blended dark spiral filaments ---------- */
+
+const dustVertex = billboardVertex;
+
+const dustFragment = `
+  varying vec2 vUv;
+  uniform float uArms;
+  uniform float uTightness;
+  void main() {
+    vec2 p = vUv - 0.5;
+    float r = length(p) * 2.0;
+    if (r < 0.08 || r > 0.95) { gl_FragColor = vec4(1.0); return; }
+    float theta = atan(p.y, p.x);
+    float spiral = theta + log(r * 6.0 + 0.5) * uTightness * 2.0;
+    float band = sin(spiral * uArms);
+    float dust = smoothstep(0.35, 0.95, band);
+    // Add some asymmetric noise via second harmonic
+    dust *= 0.7 + 0.3 * sin(spiral * uArms * 2.0 + 1.7);
+    float radialFalloff = smoothstep(0.08, 0.22, r) * (1.0 - smoothstep(0.6, 0.95, r));
+    dust *= radialFalloff * 0.55; // max darkening ~55%
+    vec3 col = vec3(1.0 - dust);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+function DustLanes({ arms, tightness }: { arms: number; tightness: number }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+      <planeGeometry args={[34, 34]} />
+      <shaderMaterial
+        vertexShader={dustVertex}
+        fragmentShader={dustFragment}
+        uniforms={{
+          uArms: { value: arms },
+          uTightness: { value: tightness },
+        }}
+        transparent
+        depthWrite={false}
+        blending={THREE.MultiplyBlending}
+      />
+    </mesh>
+  );
+}
+
+/* ---------- DISTANT GALAXIES — faint smudges in deep space ---------- */
+
+const distantGalaxyFragment = `
+  varying vec2 vUv;
+  uniform vec3 uColor;
+  uniform float uAspect;
+  void main() {
+    vec2 p = vUv - 0.5;
+    p.y *= uAspect;
+    float d = length(p) * 2.0;
+    if (d > 1.0) discard;
+    float core = pow(1.0 - d, 4.0) * 1.0;
+    float halo = pow(1.0 - d, 1.5) * 0.25;
+    float a = clamp(core + halo, 0.0, 1.0) * 0.6;
+    gl_FragColor = vec4(uColor, a);
+  }
+`;
+
+function DistantGalaxies() {
+  const galaxies = useMemo(() => {
+    const arr: Array<{
+      pos: [number, number, number];
+      size: number;
+      aspect: number;
+      color: [number, number, number];
+    }> = [];
+    // Deterministic-ish pseudo random so they don't reroll on re-render
+    let seed = 1337;
+    const rng = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    for (let i = 0; i < 9; i++) {
+      const phi = rng() * Math.PI * 2;
+      const theta = Math.acos(rng() * 2 - 1);
+      const r = 90 + rng() * 50;
+      const palette: Array<[number, number, number]> = [
+        [1.0, 0.9, 0.7],
+        [0.7, 0.8, 1.0],
+        [1.0, 0.6, 0.7],
+        [0.6, 0.9, 0.9],
+        [0.9, 0.7, 1.0],
+      ];
+      arr.push({
+        pos: [
+          r * Math.sin(theta) * Math.cos(phi),
+          r * Math.cos(theta),
+          r * Math.sin(theta) * Math.sin(phi),
+        ],
+        size: 4 + rng() * 6,
+        aspect: 1.4 + rng() * 1.6,
+        color: palette[Math.floor(rng() * palette.length)],
+      });
+    }
+    return arr;
+  }, []);
+
+  return (
+    <>
+      {galaxies.map((g, i) => (
+        <Billboard key={i} position={g.pos}>
+          <mesh>
+            <planeGeometry args={[g.size, g.size]} />
+            <shaderMaterial
+              vertexShader={billboardVertex}
+              fragmentShader={distantGalaxyFragment}
+              uniforms={{
+                uColor: { value: new THREE.Vector3(...g.color) },
+                uAspect: { value: g.aspect },
+              }}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        </Billboard>
+      ))}
+    </>
+  );
+}
+
+/* ---------- REGION LABELS ---------- */
 
 function RegionLabels() {
   const labels: Array<{ pos: [number, number, number]; text: string }> = [
@@ -203,6 +291,8 @@ function RegionLabels() {
     </group>
   );
 }
+
+/* ---------- FLY THROUGH ---------- */
 
 function FlyThrough({ active }: { active: boolean }) {
   const { camera } = useThree();
@@ -236,6 +326,8 @@ function FlyThrough({ active }: { active: boolean }) {
   return null;
 }
 
+/* ---------- ADAPTIVE QUALITY ---------- */
+
 interface AdaptiveProps {
   enabled: boolean;
   currentCount: number;
@@ -256,7 +348,7 @@ function AdaptiveQuality({ enabled, currentCount, onChange }: AdaptiveProps) {
       framesRef.current = 0;
       lastCheckRef.current = now;
       if (fps < 25 && currentCount > 5000 && now - lastReductionRef.current > 3000) {
-        const next = Math.max(5000, Math.floor(currentCount * 0.7 / 1000) * 1000);
+        const next = Math.max(5000, Math.floor((currentCount * 0.7) / 1000) * 1000);
         if (next < currentCount) {
           lastReductionRef.current = now;
           onChange(next);
@@ -267,12 +359,33 @@ function AdaptiveQuality({ enabled, currentCount, onChange }: AdaptiveProps) {
   return null;
 }
 
+/* ---------- SNAPSHOT BRIDGE ---------- */
+
+function SnapshotBridge({ register }: { register: (fn: () => string | null) => void }) {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    register(() => {
+      try {
+        gl.render(scene, camera);
+        return gl.domElement.toDataURL("image/png");
+      } catch {
+        return null;
+      }
+    });
+    return () => register(() => null);
+  }, [gl, scene, camera, register]);
+  return null;
+}
+
+/* ---------- MAIN SCENE ---------- */
+
 interface Props {
   settings: GalaxySettings;
   onAdaptiveDensityChange: (n: number) => void;
+  registerSnapshot?: (fn: () => string | null) => void;
 }
 
-export function GalaxyScene({ settings, onAdaptiveDensityChange }: Props) {
+export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapshot }: Props) {
   const [isWebGLAvailable, setIsWebGLAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -319,15 +432,22 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange }: Props) {
             alpha: true,
             stencil: false,
             depth: true,
+            preserveDrawingBuffer: true,
           }}
           style={{ background: "transparent" }}
           dpr={dpr}
         >
           <GalaxyParticles settings={settings} />
           <Starfield />
+          {settings.distantGalaxies && <DistantGalaxies />}
+          {settings.dustLanes && (
+            <group rotation={[settings.tilt, 0, 0]}>
+              <DustLanes arms={settings.arms} tightness={settings.tightness} />
+            </group>
+          )}
           {settings.blackHole && (
             <group rotation={[settings.tilt, 0, 0]}>
-              <BlackHole />
+              <BlackHole themeKey={settings.theme} />
             </group>
           )}
           {settings.regionLabels && (
@@ -341,6 +461,7 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange }: Props) {
             currentCount={settings.particleCount}
             onChange={onAdaptiveDensityChange}
           />
+          {registerSnapshot && <SnapshotBridge register={registerSnapshot} />}
           {!settings.flyThrough && (
             <OrbitControls
               enablePan={false}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { GalaxyScene } from "@/components/galaxy/GalaxyScene";
 import { ControlPanel } from "@/components/galaxy/ControlPanel";
 import { NebulaBackground } from "@/components/galaxy/NebulaBackground";
@@ -7,6 +7,24 @@ import { DEFAULT_SETTINGS, type GalaxySettings } from "@/components/galaxy/types
 
 const Index = () => {
   const [settings, setSettings] = useState<GalaxySettings>(DEFAULT_SETTINGS);
+  const snapshotFnRef = useRef<(() => string | null) | null>(null);
+
+  const registerSnapshot = useCallback((fn: () => string | null) => {
+    snapshotFnRef.current = fn;
+  }, []);
+
+  const takeSnapshot = useCallback(() => {
+    const fn = snapshotFnRef.current;
+    if (!fn) return;
+    const dataUrl = fn();
+    if (!dataUrl) return;
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `galaxy-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, []);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black">
@@ -17,9 +35,10 @@ const Index = () => {
           onAdaptiveDensityChange={(n) =>
             setSettings((prev) => ({ ...prev, particleCount: n }))
           }
+          registerSnapshot={registerSnapshot}
         />
       </div>
-      <ControlPanel settings={settings} onChange={setSettings} />
+      <ControlPanel settings={settings} onChange={setSettings} onSnapshot={takeSnapshot} />
       <AmbientSound active={settings.ambientSound} intensity={settings.rotationSpeed} />
       {/* Cinematic vignette */}
       <div
