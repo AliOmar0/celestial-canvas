@@ -61,16 +61,41 @@ export interface GalaxySettings {
   brightness: number;
   dispersion: number;
   force2D: boolean;
+  autoRotate: boolean;
+  showFPS: boolean;
 }
 
 export const DEFAULT_SETTINGS: GalaxySettings = {
   arms: 2,
   tightness: 0.1,
   rotationSpeed: 0.0,
-  tilt: 0.0,
-  particleCount: 25000,
+  tilt: 0.3,
+  particleCount: 30000,
   theme: "andromeda",
   brightness: 0.1,
   dispersion: 0.5,
   force2D: false,
+  autoRotate: true,
+  showFPS: false,
+};
+
+export type GalaxyPresetKey = "spiral" | "barred" | "compact" | "sparse";
+
+export const GALAXY_PRESETS: Record<GalaxyPresetKey, { name: string; partial: Partial<GalaxySettings> }> = {
+  spiral: {
+    name: "Spiral",
+    partial: { arms: 4, tightness: 0.2, dispersion: 0.6, particleCount: 40000, tilt: 0.3 },
+  },
+  barred: {
+    name: "Barred",
+    partial: { arms: 2, tightness: 0.45, dispersion: 1.0, particleCount: 50000, tilt: 0.5 },
+  },
+  compact: {
+    name: "Compact",
+    partial: { arms: 6, tightness: 0.7, dispersion: 0.5, particleCount: 60000, tilt: 0.2 },
+  },
+  sparse: {
+    name: "Sparse",
+    partial: { arms: 3, tightness: 0.15, dispersion: 1.5, particleCount: 20000, tilt: 0.4 },
+  },
 };

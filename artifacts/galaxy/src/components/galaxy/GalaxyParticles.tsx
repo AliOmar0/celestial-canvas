@@ -81,8 +81,8 @@ export function GalaxyParticles({ settings }: Props) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
 
   const { positions, colors, sizes, brightnesses, types } = useMemo(() => {
-    // Capping at 300k for better stability across all hardware
-    const count = Math.min(settings.particleCount, 300000);
+    // Capping at 150k for better stability across all hardware
+    const count = Math.min(settings.particleCount, 150000);
     const theme = COLOR_THEMES[settings.theme] || COLOR_THEMES.andromeda;
     const arms = settings.arms;
     const tightness = settings.tightness * 4 + 0.5;
@@ -235,7 +235,7 @@ export function GalaxyParticles({ settings }: Props) {
           fragmentShader={fragmentShader}
           uniforms={{
             uTime: { value: 0 },
-            uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+            uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.5) },
             uDensityFactor: { value: 1.0 },
             uBrightness: { value: 1.0 },
           }}

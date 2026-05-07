@@ -49,6 +49,34 @@ class WebGLErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryStat
   }
 }
 
+function FPSCounter() {
+  const [fps, setFps] = useState(0);
+  useEffect(() => {
+    let frames = 0;
+    let last = performance.now();
+    let raf = 0;
+    const tick = () => {
+      frames++;
+      const now = performance.now();
+      if (now - last >= 1000) {
+        setFps(Math.round((frames * 1000) / (now - last)));
+        frames = 0;
+        last = now;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const color = fps >= 50 ? "text-green-400" : fps >= 30 ? "text-amber-400" : "text-red-400";
+  return (
+    <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full text-[11px] border border-white/10 pointer-events-none font-mono">
+      <span className="text-white/50">FPS </span>
+      <span className={color}>{fps}</span>
+    </div>
+  );
+}
+
 interface Props {
   settings: GalaxySettings;
 }
@@ -89,17 +117,19 @@ export function GalaxyScene({ settings }: Props) {
 
   return (
     <WebGLErrorBoundary>
+      <div className="relative w-full h-full">
       <Canvas
         camera={{ position: [0, 8, 18], fov: 55 }}
         gl={{
-          antialias: true,
+          antialias: false,
           powerPreference: "high-performance",
           alpha: false,
           stencil: false,
           depth: true,
         }}
         style={{ background: "#000" }}
-        dpr={window.devicePixelRatio > 1 ? [1, 1.5] : 1}
+        dpr={[1, 1.5]}
+        frameloop="always"
       >
         <GalaxyParticles settings={settings} />
         <Starfield />
@@ -107,12 +137,14 @@ export function GalaxyScene({ settings }: Props) {
           enablePan={false}
           minDistance={5}
           maxDistance={50}
-          autoRotate
+          autoRotate={settings.autoRotate}
           autoRotateSpeed={0.3}
           enableDamping
           dampingFactor={0.05}
         />
       </Canvas>
+      {settings.showFPS && <FPSCounter />}
+      </div>
     </WebGLErrorBoundary>
   );
 }
