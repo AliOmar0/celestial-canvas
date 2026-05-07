@@ -115,24 +115,29 @@ function ToggleRow({
   inactiveText = "Off",
 }: ToggleRowProps) {
   return (
-    <div
-      className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/5 border border-white/5"
-      title={label}
+    <button
+      onClick={onToggle}
+      title={`${label} — ${active ? activeText : inactiveText}`}
+      role="switch"
+      aria-checked={active}
+      className="w-full flex items-center justify-between gap-3 p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-colors text-left"
     >
-      <span className="text-[13px] text-white/70 font-medium tracking-tight flex items-center gap-2 min-w-0 flex-1">
-        <span className="shrink-0 text-white/50">{icon}</span>
-        <span className="truncate">{label}</span>
+      <span className="text-[13px] text-white/80 font-medium tracking-tight flex items-start gap-2 min-w-0 flex-1 leading-snug">
+        <span className="shrink-0 text-white/50 pt-[2px]">{icon}</span>
+        <span className="break-words">{label}</span>
       </span>
-      <button
-        onClick={onToggle}
-        title={`${label} — ${active ? activeText : inactiveText}`}
-        className={`shrink-0 px-2.5 py-1 rounded-md text-[10px] uppercase tracking-wider transition-all font-black shadow-lg ${
-          active ? `${activeColor} text-white` : "bg-white/10 text-white/60 hover:bg-white/20"
+      <span
+        className={`shrink-0 relative w-9 h-5 rounded-full transition-colors ${
+          active ? activeColor : "bg-white/15"
         }`}
       >
-        {active ? activeText : inactiveText}
-      </button>
-    </div>
+        <span
+          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-transform ${
+            active ? "translate-x-4" : "translate-x-0"
+          }`}
+        />
+      </span>
+    </button>
   );
 }
 
