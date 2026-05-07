@@ -7,20 +7,32 @@ const vertexShader = `
   attribute float aSize;
   attribute vec3 aColor;
   attribute float aBrightness;
-  attribute float aTemperature;
+  attribute float aType; // 0: Star, 1: Gas, 2: Dust
   varying vec3 vColor;
   varying float vBrightness;
-  varying float vTemperature;
+  varying float vType;
   uniform float uTime;
   uniform float uPixelRatio;
+  uniform float uBrightness;
+  uniform float uDensityFactor;
 
   void main() {
     vColor = aColor;
     vBrightness = aBrightness;
-    vTemperature = aTemperature;
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = aSize * uPixelRatio * (350.0 / -mvPosition.z);
-    gl_PointSize = max(gl_PointSize, 0.5);
+    vType = aType;
+    
+    vec3 pos = position;
+    if (vType > 0.5) {
+      // Subtle pulsing for gas/dust
+      pos += normalize(position) * sin(uTime * 0.1 + position.x) * 0.03;
+    }
+
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+    gl_PointSize = aSize * uPixelRatio * (330.0 / -mvPosition.z);
+    
+    if (vType == 1.0) gl_PointSize *= 2.5; // Gas is larger
+    if (vType == 2.0) gl_PointSize *= 4.0; // Dust lanes are very large
+    
     gl_Position = projectionMatrix * mvPosition;
   }
 `;
@@ -28,35 +40,35 @@ const vertexShader = `
 const fragmentShader = `
   varying vec3 vColor;
   varying float vBrightness;
-  varying float vTemperature;
+  varying float vType;
+  uniform float uTime;
+  uniform float uDensityFactor;
+  uniform float uBrightness;
 
   void main() {
-    vec2 center = gl_PointCoord - 0.5;
-    float dist = length(center);
-    if (dist > 0.5) discard;
+    float dist = length(gl_PointCoord - 0.5);
+    float finalBrightness = vBrightness * uDensityFactor * uBrightness;
+    
+    // Smooth alpha mask instead of discard for better performance
+    float alphaMask = smoothstep(0.5, 0.45, dist);
+    if (alphaMask < 0.001) discard;
 
-    // Multi-layered glow for 3D sphere-like appearance
-    float hardCore = exp(-dist * dist * 80.0);
-    float softCore = exp(-dist * dist * 20.0);
-    float outerGlow = exp(-dist * dist * 5.0);
-    float haze = exp(-dist * dist * 2.0);
-
-    // Combine layers for depth
-    float intensity = hardCore * 0.5 + softCore * 0.3 + outerGlow * 0.15 + haze * 0.05;
-    float alpha = intensity * vBrightness;
-
-    // Hot white core fading to color at edges — simulates stellar atmosphere
-    vec3 hotWhite = vec3(1.0, 0.98, 0.95);
-    vec3 col = mix(vColor, hotWhite, hardCore * 0.8 + softCore * 0.3);
-
-    // Slight chromatic fringe at the edge for realism
-    col.r += outerGlow * 0.05 * vTemperature;
-    col.b += outerGlow * 0.05 * (1.0 - vTemperature);
-
-    // Boost brightness for the core
-    col *= (1.0 + hardCore * 2.0 + softCore * 0.5);
-
-    gl_FragColor = vec4(col, alpha);
+    if (vType < 0.5) {
+      // STAR RENDERING
+      // Optimized falloff: combination of a sharp peak and a soft aura
+      float intensity = (exp(-dist * 12.0) * 0.8 + exp(-dist * 4.0) * 0.2) * alphaMask;
+      vec3 col = mix(vColor, vec3(1.0), exp(-dist * 20.0) * 0.9);
+      gl_FragColor = vec4(col, intensity * finalBrightness);
+    } else if (vType < 1.5) {
+      // GAS/NEBULA RENDERING (HII Regions)
+      // Faster quadratic falloff
+      float intensity = max(0.0, 0.25 - dist * 0.5) * alphaMask;
+      gl_FragColor = vec4(vColor, intensity * finalBrightness * 0.4);
+    } else {
+      // DUST RENDERING (Dark absorption)
+      float intensity = max(0.0, 0.2 - dist * 0.4) * alphaMask;
+      gl_FragColor = vec4(vColor * 0.15, intensity * finalBrightness * 0.5);
+    }
   }
 `;
 
@@ -64,139 +76,123 @@ interface Props {
   settings: GalaxySettings;
 }
 
-// Diverse color palette for Milky Way — stars have varied spectral classes
-const MILKYWAY_ACCENT_COLORS: [number, number, number][] = [
-  [0.6, 0.7, 1.0],   // Blue-white hot stars
-  [0.9, 0.85, 0.7],  // Warm yellow giants
-  [1.0, 0.5, 0.3],   // Orange-red dwarfs
-  [0.5, 0.6, 1.0],   // Cool blue
-  [1.0, 0.9, 0.5],   // Golden
-  [0.8, 0.5, 0.9],   // Faint purple nebula regions
-  [0.4, 0.9, 0.8],   // Teal emission nebula
-  [1.0, 0.35, 0.5],  // Rose HII regions
-  [0.95, 0.95, 1.0], // Pure white
-];
-
 export function GalaxyParticles({ settings }: Props) {
   const pointsRef = useRef<THREE.Points>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
 
-  const { positions, colors, sizes, brightnesses, temperatures } = useMemo(() => {
-    const count = settings.particleCount;
-    const theme = COLOR_THEMES[settings.theme] || COLOR_THEMES.milkyway;
+  const { positions, colors, sizes, brightnesses, types } = useMemo(() => {
+    // Capping at 300k for better stability across all hardware
+    const count = Math.min(settings.particleCount, 300000);
+    const theme = COLOR_THEMES[settings.theme] || COLOR_THEMES.andromeda;
     const arms = settings.arms;
-    const tightness = settings.tightness * 3 + 0.5;
-    const isMilkyWay = settings.theme === "milkyway";
+    const tightness = settings.tightness * 4 + 0.5;
 
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
     const siz = new Float32Array(count);
     const bri = new Float32Array(count);
-    const temp = new Float32Array(count);
+    const typ = new Float32Array(count);
+
+    // Pre-calculate common factors for performance
+    const radialLimit = 15;
+    const invRadialLimit = 1 / radialLimit;
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
+      
+      const randType = Math.random();
+      let pType = 0.0; 
+      if (randType > 0.88) pType = 1.0; // Gas
+      else if (randType < 0.12) pType = 2.0; // Dust
+      typ[i] = pType;
+
       const armIndex = i % arms;
-      const armAngle = (armIndex / arms) * Math.PI * 2;
+      const angleOffset = (armIndex / arms) * Math.PI * 2;
+      
+      const r = Math.pow(Math.random(), 1.4) * radialLimit;
+      const isCoreBulge = Math.random() < 0.15 && r < 2.5;
 
-      // Radius with exponential distribution favoring center
-      const r = Math.pow(Math.random(), 1.5) * 15;
+      const spiralAngle = r * tightness + angleOffset;
+      // Increased noise impact and added radial dispersion
+      const noiseAmp = (pType === 2.0 ? 2.5 : (pType === 1.0 ? 1.8 : 1.2)) * settings.dispersion;
+      const angle = isCoreBulge 
+        ? Math.random() * Math.PI * 2 
+        : spiralAngle + (Math.random() - 0.5) * noiseAmp / (Math.pow(r, 0.4) + 1.0);
 
-      // Spiral angle
-      const spiralAngle = r * tightness + armAngle;
+      // Radial dispersion
+      const radialNoise = (Math.random() - 0.5) * settings.dispersion * 0.4;
+      const finalR = Math.max(0, r + (isCoreBulge ? 0 : radialNoise));
 
-      // Spread increases with distance
-      const spread = r * 0.15 + 0.1;
-      const offX = (Math.random() - 0.5) * spread * 2;
-      const offY = (Math.random() - 0.5) * spread * 0.4;
-      const offZ = (Math.random() - 0.5) * spread * 2;
+      // ENHANCED 3D DEPTH: Variable vertical spread and disk warp
+      // Disk warp creates a subtle 'integral' shape
+      const diskWarp = Math.sin(finalR * 0.2) * 0.4;
+      const verticalSpread = isCoreBulge 
+        ? 1.2 // More spherical core
+        : (pType === 0.0 ? 0.35 + (finalR * 0.05) : 1.2) * settings.dispersion; // Dispersion also affects height
+      
+      const diskHeight = (Math.random() - 0.5) * verticalSpread * Math.exp(-finalR * (isCoreBulge ? 0.25 : 0.05)) + diskWarp;
 
-      pos[i3] = Math.cos(spiralAngle) * r + offX;
-      pos[i3 + 1] = offY * (1 - r / 20);
-      pos[i3 + 2] = Math.sin(spiralAngle) * r + offZ;
+      pos[i3] = Math.cos(angle) * finalR;
+      pos[i3 + 1] = diskHeight;
+      pos[i3 + 2] = Math.sin(angle) * finalR;
 
-      // Normalized distance
-      const t = Math.min(r / 12, 1);
+      const radialFactor = 0.15 + Math.pow(r * invRadialLimit, 1.3) * 1.25;
 
-      // Temperature (0 = cool/red, 1 = hot/blue)
-      const starTemp = Math.random();
-      temp[i] = starTemp;
-
-      let baseColor: [number, number, number];
-
-      if (isMilkyWay) {
-        // Rich, diverse coloring for Milky Way
-        // Base gradient from core to outer
-        let gradient: [number, number, number];
-        if (t < 0.2) {
-          const lt = t / 0.2;
-          gradient = [
-            1.0 * (1 - lt) + 0.7 * lt,
-            0.92 * (1 - lt) + 0.75 * lt,
-            0.7 * (1 - lt) + 0.95 * lt,
-          ];
-        } else if (t < 0.5) {
-          const lt = (t - 0.2) / 0.3;
-          gradient = [
-            0.7 * (1 - lt) + 0.85 * lt,
-            0.75 * (1 - lt) + 0.65 * lt,
-            0.95 * (1 - lt) + 0.5 * lt,
-          ];
-        } else {
-          const lt = (t - 0.5) / 0.5;
-          gradient = [
-            0.85 * (1 - lt) + 0.6 * lt,
-            0.65 * (1 - lt) + 0.4 * lt,
-            0.5 * (1 - lt) + 0.3 * lt,
-          ];
-        }
-
-        // Mix in a random accent color for diversity
-        const accent = MILKYWAY_ACCENT_COLORS[Math.floor(Math.random() * MILKYWAY_ACCENT_COLORS.length)];
-        const accentMix = Math.random() * 0.5; // up to 50% accent blend
-        baseColor = [
-          gradient[0] * (1 - accentMix) + accent[0] * accentMix,
-          gradient[1] * (1 - accentMix) + accent[1] * accentMix,
-          gradient[2] * (1 - accentMix) + accent[2] * accentMix,
+      let bRgb: [number, number, number];
+      if (r < 2.5 || isCoreBulge) {
+        const mixRatio = r / 2.5;
+        bRgb = [
+          theme.core[0] * (1 - mixRatio) + theme.mid[0] * mixRatio,
+          theme.core[1] * (1 - mixRatio) + theme.mid[1] * mixRatio,
+          theme.core[2] * (1 - mixRatio) + theme.mid[2] * mixRatio,
         ];
       } else {
-        // Other themes use the standard gradient
-        if (t < 0.3) {
-          const lt = t / 0.3;
-          baseColor = [
-            theme.core[0] * (1 - lt) + theme.mid[0] * lt,
-            theme.core[1] * (1 - lt) + theme.mid[1] * lt,
-            theme.core[2] * (1 - lt) + theme.mid[2] * lt,
-          ];
-        } else {
-          const lt = (t - 0.3) / 0.7;
-          baseColor = [
-            theme.mid[0] * (1 - lt) + theme.outer[0] * lt,
-            theme.mid[1] * (1 - lt) + theme.outer[1] * lt,
-            theme.mid[2] * (1 - lt) + theme.outer[2] * lt,
+        const mixRatio = (r - 2.5) / 12.5;
+        if (pType === 1.0) bRgb = [0.95, 0.2, 0.6];
+        else if (pType === 2.0) bRgb = [0.2, 0.15, 0.1];
+        else {
+          bRgb = [
+            theme.mid[0] * (1 - mixRatio) + theme.outer[0] * mixRatio,
+            theme.mid[1] * (1 - mixRatio) + theme.outer[1] * mixRatio,
+            theme.mid[2] * (1 - mixRatio) + theme.outer[2] * mixRatio,
           ];
         }
       }
 
-      // Random color jitter
-      col[i3] = Math.max(0, Math.min(1, baseColor[0] + (Math.random() - 0.5) * 0.15));
-      col[i3 + 1] = Math.max(0, Math.min(1, baseColor[1] + (Math.random() - 0.5) * 0.15));
-      col[i3 + 2] = Math.max(0, Math.min(1, baseColor[2] + (Math.random() - 0.5) * 0.15));
+      // Shading and Hue Variance
+      const colorVariance = Math.random();
+      let sFactor = radialFactor;
+      if (pType === 2.0) sFactor *= 0.5;
 
-      // Size — larger near center, some random big/bright stars
-      const isBigStar = Math.random() > 0.993;
-      siz[i] = isBigStar
-        ? 4 + Math.random() * 5
-        : (1 - t * 0.4) * 2.0 + Math.random() * 0.8;
+      let wMix = 0.0;
+      let hShift = (Math.random() - 0.5) * 0.15;
 
-      // Brightness — brighter near center, with variation
-      bri[i] = isBigStar
-        ? 0.9 + Math.random() * 0.1
-        : (1 - t * 0.5) * 0.7 + Math.random() * 0.4;
+      if (colorVariance > 0.9 && pType === 0.0) {
+        wMix = Math.random() * 0.3 * radialFactor;
+        sFactor *= 1.1;
+      }
+
+      col[i3] = Math.min(1.0, Math.max(0, bRgb[0] * sFactor + wMix + hShift * 0.2));
+      col[i3 + 1] = Math.min(1.0, Math.max(0, bRgb[1] * sFactor + wMix - hShift * 0.1));
+      col[i3 + 2] = Math.min(1.0, Math.max(0, bRgb[2] * sFactor + wMix + hShift * 0.3));
+
+      // Individual Brightness
+      const coreDim = isCoreBulge ? 0.35 : 1.0;
+      if (pType === 1.0) {
+        siz[i] = 1.8 + Math.random() * 2.5;
+        bri[i] = (0.15 + Math.random() * 0.25) * coreDim;
+      } else if (pType === 2.0) {
+        siz[i] = 3.0 + Math.random() * 5.0;
+        bri[i] = (0.2 + Math.random() * 0.3) * coreDim;
+      } else {
+        const isBrightStar = Math.random() < 0.008;
+        siz[i] = isBrightStar ? 3.5 + Math.random() * 4.0 : 0.7 + Math.random() * 1.5;
+        bri[i] = (isBrightStar ? 0.8 + Math.random() * 0.2 : 0.4 + Math.random() * 0.55) * coreDim;
+      }
     }
 
-    return { positions: pos, colors: col, sizes: siz, brightnesses: bri, temperatures: temp };
-  }, [settings.particleCount, settings.theme, settings.arms, settings.tightness]);
+    return { positions: pos, colors: col, sizes: siz, brightnesses: bri, types: typ };
+  }, [settings.particleCount, settings.theme, settings.arms, settings.tightness, settings.dispersion]);
 
   useEffect(() => {
     if (pointsRef.current) {
@@ -205,13 +201,21 @@ export function GalaxyParticles({ settings }: Props) {
       geo.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
       geo.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
       geo.setAttribute("aBrightness", new THREE.BufferAttribute(brightnesses, 1));
-      geo.setAttribute("aTemperature", new THREE.BufferAttribute(temperatures, 1));
+      geo.setAttribute("aType", new THREE.BufferAttribute(types, 1));
     }
-  }, [positions, colors, sizes, brightnesses, temperatures]);
+  }, [positions, colors, sizes, brightnesses, types]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (pointsRef.current) {
       pointsRef.current.rotation.y += delta * settings.rotationSpeed * 0.1;
+    }
+    if (materialRef.current) {
+      materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+      const count = settings.particleCount;
+      // Linear normalization works much better for additive blending
+      // Keeps total luminosity roughly constant across density levels
+      materialRef.current.uniforms.uDensityFactor.value = 60000 / count;
+      materialRef.current.uniforms.uBrightness.value = settings.brightness;
     }
   });
 
@@ -223,7 +227,7 @@ export function GalaxyParticles({ settings }: Props) {
           <bufferAttribute attach="attributes-aColor" args={[colors, 3]} />
           <bufferAttribute attach="attributes-aSize" args={[sizes, 1]} />
           <bufferAttribute attach="attributes-aBrightness" args={[brightnesses, 1]} />
-          <bufferAttribute attach="attributes-aTemperature" args={[temperatures, 1]} />
+          <bufferAttribute attach="attributes-aType" args={[types, 1]} />
         </bufferGeometry>
         <shaderMaterial
           ref={materialRef}
@@ -232,6 +236,8 @@ export function GalaxyParticles({ settings }: Props) {
           uniforms={{
             uTime: { value: 0 },
             uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+            uDensityFactor: { value: 1.0 },
+            uBrightness: { value: 1.0 },
           }}
           transparent
           depthWrite={false}
@@ -241,3 +247,5 @@ export function GalaxyParticles({ settings }: Props) {
     </group>
   );
 }
+
+function exp(x: number) { return Math.exp(x); }
