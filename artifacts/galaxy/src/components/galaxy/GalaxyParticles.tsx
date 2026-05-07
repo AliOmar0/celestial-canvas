@@ -21,13 +21,7 @@ const vertexShader = `
     vBrightness = aBrightness;
     vType = aType;
     
-    vec3 pos = position;
-    if (vType > 0.5) {
-      // Subtle pulsing for gas/dust
-      pos += normalize(position) * sin(uTime * 0.1 + position.x) * 0.03;
-    }
-
-    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_PointSize = aSize * uPixelRatio * (330.0 / -mvPosition.z);
     
     if (vType == 1.0) gl_PointSize *= 2.5; // Gas is larger
@@ -44,10 +38,11 @@ const fragmentShader = `
   uniform float uTime;
   uniform float uDensityFactor;
   uniform float uBrightness;
+  uniform float uBloom;
 
   void main() {
     float dist = length(gl_PointCoord - 0.5);
-    float finalBrightness = vBrightness * uDensityFactor * uBrightness;
+    float finalBrightness = vBrightness * uDensityFactor * uBrightness * uBloom;
     
     // Smooth alpha mask instead of discard for better performance
     float alphaMask = smoothstep(0.5, 0.45, dist);
@@ -216,6 +211,7 @@ export function GalaxyParticles({ settings }: Props) {
       // Keeps total luminosity roughly constant across density levels
       materialRef.current.uniforms.uDensityFactor.value = 60000 / count;
       materialRef.current.uniforms.uBrightness.value = settings.brightness;
+      materialRef.current.uniforms.uBloom.value = settings.bloom ? 2.4 : 1.0;
     }
   });
 
@@ -235,9 +231,10 @@ export function GalaxyParticles({ settings }: Props) {
           fragmentShader={fragmentShader}
           uniforms={{
             uTime: { value: 0 },
-            uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.5) },
+            uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.0) },
             uDensityFactor: { value: 1.0 },
             uBrightness: { value: 1.0 },
+            uBloom: { value: 1.0 },
           }}
           transparent
           depthWrite={false}

@@ -1,10 +1,18 @@
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrbitControls, Html } from "@react-three/drei";
 import { GalaxyParticles } from "./GalaxyParticles";
 import { Starfield } from "./Starfield";
 import { Galaxy2D } from "./Galaxy2D";
 import type { GalaxySettings } from "./types";
-import React, { Component, ReactNode, useState, useEffect } from "react";
+import {
+  Component,
+  ReactNode,
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
+import * as THREE from "three";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -34,7 +42,7 @@ class WebGLErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryStat
             <p className="text-sm opacity-80">
               An unexpected error occurred while rendering the 3D scene.
             </p>
-            <button 
+            <button
               onClick={() => window.location.reload()}
               className="px-6 py-2 bg-white text-black font-semibold rounded-md hover:bg-zinc-200 transition-colors"
             >
@@ -70,18 +78,125 @@ function FPSCounter() {
   }, []);
   const color = fps >= 50 ? "text-green-400" : fps >= 30 ? "text-amber-400" : "text-red-400";
   return (
-    <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full text-[11px] border border-white/10 pointer-events-none font-mono">
+    <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full text-[11px] border border-white/10 pointer-events-none font-mono z-30">
       <span className="text-white/50">FPS </span>
       <span className={color}>{fps}</span>
     </div>
   );
 }
 
-interface Props {
-  settings: GalaxySettings;
+function BlackHole() {
+  const ringRef = useRef<THREE.Mesh>(null);
+  useFrame((_, delta) => {
+    if (ringRef.current) ringRef.current.rotation.z += delta * 0.6;
+  });
+  return (
+    <group>
+      <mesh>
+        <sphereGeometry args={[0.45, 16, 16]} />
+        <meshBasicMaterial color="#000" />
+      </mesh>
+      <mesh ref={ringRef} rotation={[Math.PI / 2.4, 0, 0]}>
+        <torusGeometry args={[0.85, 0.06, 12, 64]} />
+        <meshBasicMaterial color="#ffaa55" toneMapped={false} transparent opacity={0.85} />
+      </mesh>
+      <mesh rotation={[Math.PI / 2.4, 0, 0]}>
+        <torusGeometry args={[1.05, 0.02, 8, 64]} />
+        <meshBasicMaterial color="#ff5522" toneMapped={false} transparent opacity={0.5} />
+      </mesh>
+    </group>
+  );
 }
 
-export function GalaxyScene({ settings }: Props) {
+function RegionLabels() {
+  const labels: Array<{ pos: [number, number, number]; text: string }> = [
+    { pos: [0, 1.2, 0], text: "Galactic Core" },
+    { pos: [9, 0.5, 0], text: "Outer Arm" },
+    { pos: [0, 0.5, -9], text: "Spiral Branch" },
+    { pos: [-7, 3, 4], text: "Halo" },
+  ];
+  return (
+    <group>
+      {labels.map((l, i) => (
+        <Html key={i} position={l.pos} center distanceFactor={18} zIndexRange={[10, 0]}>
+          <div className="text-[9px] uppercase tracking-[0.2em] text-white/80 px-2 py-0.5 rounded bg-black/50 border border-white/15 backdrop-blur-sm whitespace-nowrap pointer-events-none select-none">
+            {l.text}
+          </div>
+        </Html>
+      ))}
+    </group>
+  );
+}
+
+function FlyThrough({ active }: { active: boolean }) {
+  const { camera } = useThree();
+  const tRef = useRef(0);
+  const savedRef = useRef<{ pos: THREE.Vector3; quat: THREE.Quaternion } | null>(null);
+
+  useEffect(() => {
+    if (active) {
+      savedRef.current = {
+        pos: camera.position.clone(),
+        quat: camera.quaternion.clone(),
+      };
+      tRef.current = 0;
+    } else if (savedRef.current) {
+      camera.position.copy(savedRef.current.pos);
+      camera.quaternion.copy(savedRef.current.quat);
+      savedRef.current = null;
+    }
+  }, [active, camera]);
+
+  useFrame((_, delta) => {
+    if (!active) return;
+    tRef.current += delta * 0.12;
+    const t = tRef.current;
+    const r = 14 + Math.sin(t * 0.7) * 6;
+    const y = 4 + Math.sin(t * 0.4) * 5;
+    camera.position.set(Math.cos(t) * r, y, Math.sin(t) * r);
+    camera.lookAt(0, 0, 0);
+  });
+
+  return null;
+}
+
+interface AdaptiveProps {
+  enabled: boolean;
+  currentCount: number;
+  onChange: (newCount: number) => void;
+}
+
+function AdaptiveQuality({ enabled, currentCount, onChange }: AdaptiveProps) {
+  const framesRef = useRef(0);
+  const lastCheckRef = useRef(performance.now());
+  const lastReductionRef = useRef(0);
+  useFrame(() => {
+    if (!enabled) return;
+    framesRef.current++;
+    const now = performance.now();
+    const elapsed = now - lastCheckRef.current;
+    if (elapsed >= 2000) {
+      const fps = (framesRef.current * 1000) / elapsed;
+      framesRef.current = 0;
+      lastCheckRef.current = now;
+      if (fps < 25 && currentCount > 5000 && now - lastReductionRef.current > 3000) {
+        const next = Math.max(5000, Math.floor(currentCount * 0.7 / 1000) * 1000);
+        if (next < currentCount) {
+          lastReductionRef.current = now;
+          onChange(next);
+        }
+      }
+    }
+  });
+  return null;
+}
+
+interface Props {
+  settings: GalaxySettings;
+  onAdaptiveDensityChange: (n: number) => void;
+}
+
+export function GalaxyScene({ settings, onAdaptiveDensityChange }: Props) {
   const [isWebGLAvailable, setIsWebGLAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -99,6 +214,8 @@ export function GalaxyScene({ settings }: Props) {
     };
     checkWebGL();
   }, []);
+
+  const dpr = useMemo<[number, number]>(() => [1, 1], []);
 
   if (isWebGLAvailable === null) return <div className="w-full h-full bg-black" />;
 
@@ -118,32 +235,49 @@ export function GalaxyScene({ settings }: Props) {
   return (
     <WebGLErrorBoundary>
       <div className="relative w-full h-full">
-      <Canvas
-        camera={{ position: [0, 8, 18], fov: 55 }}
-        gl={{
-          antialias: false,
-          powerPreference: "high-performance",
-          alpha: false,
-          stencil: false,
-          depth: true,
-        }}
-        style={{ background: "#000" }}
-        dpr={[1, 1.5]}
-        frameloop="always"
-      >
-        <GalaxyParticles settings={settings} />
-        <Starfield />
-        <OrbitControls
-          enablePan={false}
-          minDistance={5}
-          maxDistance={50}
-          autoRotate={settings.autoRotate}
-          autoRotateSpeed={0.3}
-          enableDamping
-          dampingFactor={0.05}
-        />
-      </Canvas>
-      {settings.showFPS && <FPSCounter />}
+        <Canvas
+          camera={{ position: [0, 8, 18], fov: 55 }}
+          gl={{
+            antialias: false,
+            powerPreference: "high-performance",
+            alpha: false,
+            stencil: false,
+            depth: true,
+          }}
+          style={{ background: "transparent" }}
+          dpr={dpr}
+        >
+          <GalaxyParticles settings={settings} />
+          <Starfield />
+          {settings.blackHole && (
+            <group rotation={[settings.tilt, 0, 0]}>
+              <BlackHole />
+            </group>
+          )}
+          {settings.regionLabels && (
+            <group rotation={[settings.tilt, 0, 0]}>
+              <RegionLabels />
+            </group>
+          )}
+          <FlyThrough active={settings.flyThrough} />
+          <AdaptiveQuality
+            enabled={settings.adaptiveQuality}
+            currentCount={settings.particleCount}
+            onChange={onAdaptiveDensityChange}
+          />
+          {!settings.flyThrough && (
+            <OrbitControls
+              enablePan={false}
+              minDistance={5}
+              maxDistance={50}
+              autoRotate={settings.autoRotate}
+              autoRotateSpeed={0.3}
+              enableDamping
+              dampingFactor={0.05}
+            />
+          )}
+        </Canvas>
+        {settings.showFPS && <FPSCounter />}
       </div>
     </WebGLErrorBoundary>
   );

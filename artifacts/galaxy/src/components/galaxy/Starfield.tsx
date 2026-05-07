@@ -49,7 +49,7 @@ export function Starfield() {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
 
   const { positions, colors, sizes } = useMemo(() => {
-    const count = 1500;
+    const count = 800;
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
     const siz = new Float32Array(count);
@@ -112,7 +112,7 @@ export function Starfield() {
         fragmentShader={starFragmentShader}
         uniforms={{
           uTime: { value: 0 },
-          uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.5) },
+          uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.0) },
         }}
         transparent
         depthWrite={false}
