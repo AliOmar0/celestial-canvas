@@ -468,6 +468,12 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         onToggle={() => update("adaptiveQuality", !settings.adaptiveQuality)}
         activeColor="bg-indigo-600"
       />
+      {settings.adaptiveQuality && (
+        <div className="mx-1 -mt-0.5 px-2.5 py-1.5 rounded-md bg-indigo-500/10 border border-indigo-400/20 text-[11px] leading-snug text-indigo-200/80">
+          Adaptive Quality is on — if you raise the star density and your frame
+          rate drops, particles will auto-thin until the scene runs smoothly.
+        </div>
+      )}
       <ToggleRow
         icon={<Activity className="w-3.5 h-3.5" />}
         label="FPS Counter"
