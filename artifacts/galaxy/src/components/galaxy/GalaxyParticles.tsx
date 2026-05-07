@@ -128,6 +128,31 @@ export function GalaxyParticles({ settings }: Props) {
     const radialLimit = 15;
     const invRadialLimit = 1 / radialLimit;
 
+    // ---- ARM ASYMMETRY: per-arm radial scale + density weight ----
+    // Real galaxies aren't perfectly symmetric — one arm often dominates.
+    // Deterministic per-arm values so toggling doesn't reroll randomly.
+    const armScales: number[] = [];
+    const armWeights: number[] = [];
+    if (settings.armAsymmetry) {
+      // Seeded LCG so it's stable across renders
+      let s = 1234 + arms * 17;
+      const rng = () => {
+        s = (s * 9301 + 49297) % 233280;
+        return s / 233280;
+      };
+      for (let a = 0; a < arms; a++) {
+        armScales.push(0.65 + rng() * 0.55);   // 0.65–1.20 length variation
+        armWeights.push(0.55 + rng() * 0.85);  // 0.55–1.40 brightness variation
+      }
+    }
+
+    // ---- STELLAR POPULATIONS: warm bulge → cool arms tint ----
+    // Pop II (old) stars in the bulge are red/yellow; Pop I (young) stars
+    // in the arms are hot blue. Mixing these tints with the theme color
+    // creates the realistic radial color gradient seen in Hubble images.
+    const popI = [0.55, 0.7, 1.15];   // blue tint for young arm stars
+    const popII = [1.15, 0.95, 0.7];  // warm yellow tint for old bulge stars
+
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
       
@@ -139,8 +164,11 @@ export function GalaxyParticles({ settings }: Props) {
 
       const armIndex = i % arms;
       const angleOffset = (armIndex / arms) * Math.PI * 2;
-      
-      const r = Math.pow(Math.random(), 1.4) * radialLimit;
+
+      // Asymmetry: per-arm radial scale (1.0 if disabled)
+      const armScale = settings.armAsymmetry ? armScales[armIndex] : 1.0;
+
+      const r = Math.pow(Math.random(), 1.4) * radialLimit * armScale;
       const isCoreBulge = Math.random() < 0.15 && r < 2.5;
 
       const spiralAngle = r * tightness + angleOffset;
@@ -163,9 +191,28 @@ export function GalaxyParticles({ settings }: Props) {
       
       const diskHeight = (Math.random() - 0.5) * verticalSpread * Math.exp(-finalR * (isCoreBulge ? 0.25 : 0.05)) + diskWarp;
 
-      pos[i3] = Math.cos(angle) * finalR;
-      pos[i3 + 1] = diskHeight;
-      pos[i3 + 2] = Math.sin(angle) * finalR;
+      let px = Math.cos(angle) * finalR;
+      const py = diskHeight;
+      let pz = Math.sin(angle) * finalR;
+
+      // ---- BAR STRUCTURE: stretch inner particles into an elongated bar ----
+      // Real barred spirals (NGC 1300, NGC 1365) have a flat dense bar in the
+      // center where stars on radial orbits pile up. We achieve this by
+      // remapping the inner ~3.5 unit region into an elongated ellipse along
+      // the X axis: stretch X by 1.8x, squash Z by 0.45x, with smooth falloff
+      // so it blends into the spiral arms.
+      if (settings.barStructure && finalR < 4.0) {
+        const barFalloff = 1.0 - Math.min(1.0, finalR / 4.0);
+        const barStrength = barFalloff * barFalloff; // 0..1, smooth
+        const stretchX = 1.0 + 0.85 * barStrength;
+        const squashZ = 1.0 - 0.55 * barStrength;
+        px *= stretchX;
+        pz *= squashZ;
+      }
+
+      pos[i3] = px;
+      pos[i3 + 1] = py;
+      pos[i3 + 2] = pz;
 
       const radialFactor = 0.15 + Math.pow(r * invRadialLimit, 1.3) * 1.25;
 
@@ -203,27 +250,58 @@ export function GalaxyParticles({ settings }: Props) {
         sFactor *= 1.1;
       }
 
-      col[i3] = Math.min(1.0, Math.max(0, bRgb[0] * sFactor + wMix + hShift * 0.2));
-      col[i3 + 1] = Math.min(1.0, Math.max(0, bRgb[1] * sFactor + wMix - hShift * 0.1));
-      col[i3 + 2] = Math.min(1.0, Math.max(0, bRgb[2] * sFactor + wMix + hShift * 0.3));
+      let cR = bRgb[0] * sFactor + wMix + hShift * 0.2;
+      let cG = bRgb[1] * sFactor + wMix - hShift * 0.1;
+      let cB = bRgb[2] * sFactor + wMix + hShift * 0.3;
+
+      // ---- STELLAR POPULATIONS — radial Pop II (yellow bulge) → Pop I (blue arm) tint ----
+      // Only applied to STAR particles (gas/dust keep their natural colors).
+      if (settings.stellarPopulations && pType === 0.0) {
+        // 0 at center → 1 at outer disk
+        const popMix = Math.min(1.0, Math.max(0.0, (finalR - 1.0) / 11.0));
+        // Tint vector smoothly interpolates from warm yellow → cool blue
+        const tintR = popII[0] * (1 - popMix) + popI[0] * popMix;
+        const tintG = popII[1] * (1 - popMix) + popI[1] * popMix;
+        const tintB = popII[2] * (1 - popMix) + popI[2] * popMix;
+        // Apply at 60% strength so theme colors still come through
+        const strength = 0.6;
+        cR = cR * (1 - strength) + cR * tintR * strength;
+        cG = cG * (1 - strength) + cG * tintG * strength;
+        cB = cB * (1 - strength) + cB * tintB * strength;
+      }
+
+      col[i3] = Math.min(1.0, Math.max(0, cR));
+      col[i3 + 1] = Math.min(1.0, Math.max(0, cG));
+      col[i3 + 2] = Math.min(1.0, Math.max(0, cB));
 
       // Individual Brightness
       const coreDim = isCoreBulge ? 0.35 : 1.0;
+      // Asymmetry: per-arm brightness weight
+      const armWeight = settings.armAsymmetry ? armWeights[armIndex] : 1.0;
       if (pType === 1.0) {
         siz[i] = 1.8 + Math.random() * 2.5;
-        bri[i] = (0.15 + Math.random() * 0.25) * coreDim;
+        bri[i] = (0.15 + Math.random() * 0.25) * coreDim * armWeight;
       } else if (pType === 2.0) {
         siz[i] = 3.0 + Math.random() * 5.0;
-        bri[i] = (0.2 + Math.random() * 0.3) * coreDim;
+        bri[i] = (0.2 + Math.random() * 0.3) * coreDim * armWeight;
       } else {
         const isBrightStar = Math.random() < 0.008;
         siz[i] = isBrightStar ? 3.5 + Math.random() * 4.0 : 0.7 + Math.random() * 1.5;
-        bri[i] = (isBrightStar ? 0.8 + Math.random() * 0.2 : 0.4 + Math.random() * 0.55) * coreDim;
+        bri[i] = (isBrightStar ? 0.8 + Math.random() * 0.2 : 0.4 + Math.random() * 0.55) * coreDim * armWeight;
       }
     }
 
     return { positions: pos, colors: col, sizes: siz, brightnesses: bri, types: typ };
-  }, [settings.particleCount, settings.theme, settings.arms, settings.tightness, settings.dispersion]);
+  }, [
+    settings.particleCount,
+    settings.theme,
+    settings.arms,
+    settings.tightness,
+    settings.dispersion,
+    settings.barStructure,
+    settings.armAsymmetry,
+    settings.stellarPopulations,
+  ]);
 
   useEffect(() => {
     if (pointsRef.current) {

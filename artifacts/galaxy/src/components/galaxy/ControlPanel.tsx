@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Slider } from "@/components/ui/slider";
 import {
   COLOR_THEMES,
@@ -29,6 +29,12 @@ import {
   Stars,
   Download,
   Globe,
+  Flame,
+  Orbit,
+  Palette,
+  Minus,
+  Scaling,
+  Users,
 } from "lucide-react";
 
 interface Props {
@@ -53,8 +59,44 @@ function useIsMobile() {
   return isMobile;
 }
 
+/* ---------- Collapsible Section ---------- */
+interface SectionProps {
+  title: string;
+  defaultOpen?: boolean;
+  badge?: string;
+  children: ReactNode;
+}
+function Section({ title, defaultOpen = true, badge, children }: SectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="border border-white/5 rounded-lg overflow-hidden bg-white/[0.02]">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="text-[11px] uppercase tracking-widest text-white/55 font-semibold">
+            {title}
+          </h3>
+          {badge && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-medium">
+              {badge}
+            </span>
+          )}
+        </div>
+        {open ? (
+          <ChevronUp className="w-3.5 h-3.5 text-white/40" />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 text-white/40" />
+        )}
+      </button>
+      {open && <div className="px-3 pb-3 pt-1 space-y-3">{children}</div>}
+    </section>
+  );
+}
+
 interface ToggleRowProps {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   active: boolean;
   onToggle: () => void;
@@ -74,13 +116,13 @@ function ToggleRow({
 }: ToggleRowProps) {
   return (
     <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
-      <span className="text-sm text-white/70 font-medium tracking-tight flex items-center gap-2">
-        {icon}
-        {label}
+      <span className="text-sm text-white/70 font-medium tracking-tight flex items-center gap-2 min-w-0">
+        <span className="shrink-0 text-white/50">{icon}</span>
+        <span className="truncate">{label}</span>
       </span>
       <button
         onClick={onToggle}
-        className={`px-3 py-1.5 rounded-md text-[10px] uppercase tracking-wider transition-all font-black shadow-lg ${
+        className={`shrink-0 px-3 py-1.5 rounded-md text-[10px] uppercase tracking-wider transition-all font-black shadow-lg ${
           active ? `${activeColor} text-white` : "bg-white/10 text-white/60 hover:bg-white/20"
         }`}
       >
@@ -157,17 +199,35 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
 
   const reset = () => onChange({ ...DEFAULT_SETTINGS });
 
+  // Count active toggles for header summary
+  const activeFeatureCount = [
+    settings.bloom,
+    settings.softParticles,
+    settings.particles3D,
+    settings.dustLanes,
+    settings.blackHole,
+    settings.nebulaBackground,
+    settings.distantGalaxies,
+    settings.regionLabels,
+    settings.hiiRegions,
+    settings.globularClusters,
+    settings.stellarPopulations,
+    settings.barStructure,
+    settings.armAsymmetry,
+    settings.companionGalaxy,
+  ].filter(Boolean).length;
+
   const panelContent = (
-    <div className="flex flex-col gap-6 p-6 overflow-y-auto h-full">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-3 p-4 overflow-y-auto h-full">
+      <div className="flex items-center gap-2 px-1">
         <Settings className="w-5 h-5 text-white/70" />
         <h2 className="text-white font-semibold text-lg tracking-tight">
           Galaxy Controls
         </h2>
       </div>
 
-      {/* Quick Actions */}
-      <section className="grid grid-cols-2 gap-2">
+      {/* Quick Actions — always visible, not in a section */}
+      <div className="grid grid-cols-2 gap-2">
         <button
           onClick={randomize}
           className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-white/10 text-white hover:bg-white/20 transition-all"
@@ -191,13 +251,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
             Save Snapshot (PNG)
           </button>
         )}
-      </section>
+      </div>
 
-      {/* Presets */}
-      <section className="space-y-3">
-        <h3 className="text-xs uppercase tracking-widest text-white/40 font-medium">
-          Shape Preset
-        </h3>
+      <Section title="Shape Preset" defaultOpen>
         <div className="grid grid-cols-2 gap-2">
           {Object.entries(GALAXY_PRESETS).map(([key, preset]) => (
             <button
@@ -209,14 +265,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
             </button>
           ))}
         </div>
-      </section>
+      </Section>
 
-      {/* Shape */}
-      <section className="space-y-4">
-        <h3 className="text-xs uppercase tracking-widest text-white/40 font-medium">
-          Shape
-        </h3>
-
+      <Section title="Shape" defaultOpen>
         <LiveSlider
           label="Spiral Arms"
           value={settings.arms}
@@ -225,7 +276,6 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           step={1}
           onChange={(v) => update("arms", v)}
         />
-
         <LiveSlider
           label="Arm Tightness"
           value={settings.tightness}
@@ -235,24 +285,15 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           formatter={(v) => v.toFixed(2)}
           onChange={(v) => update("tightness", v)}
         />
-
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm text-white/70">
-            <span>Rotation Speed</span>
-            <span className="text-white/50">
-              {settings.rotationSpeed.toFixed(2)}
-            </span>
-          </div>
-          <Slider
-            min={0}
-            max={1}
-            step={0.05}
-            value={[settings.rotationSpeed]}
-            onValueChange={([v]) => update("rotationSpeed", v)}
-            className={sliderClass}
-          />
-        </div>
-
+        <LiveSlider
+          label="Rotation Speed"
+          value={settings.rotationSpeed}
+          min={0}
+          max={1}
+          step={0.05}
+          formatter={(v) => v.toFixed(2)}
+          onChange={(v) => update("rotationSpeed", v)}
+        />
         <LiveSlider
           label="Dispersion"
           value={settings.dispersion}
@@ -262,30 +303,18 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           formatter={(v) => v.toFixed(2)}
           onChange={(v) => update("dispersion", v)}
         />
+        <LiveSlider
+          label="Tilt"
+          value={settings.tilt}
+          min={0}
+          max={1.2}
+          step={0.05}
+          formatter={(v) => `${(v * (180 / Math.PI)).toFixed(0)}°`}
+          onChange={(v) => update("tilt", v)}
+        />
+      </Section>
 
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm text-white/70">
-            <span>Tilt</span>
-            <span className="text-white/50">
-              {(settings.tilt * (180 / Math.PI)).toFixed(0)}°
-            </span>
-          </div>
-          <Slider
-            min={0}
-            max={1.2}
-            step={0.05}
-            value={[settings.tilt]}
-            onValueChange={([v]) => update("tilt", v)}
-            className={sliderClass}
-          />
-        </div>
-      </section>
-
-      {/* Color Themes */}
-      <section className="space-y-3">
-        <h3 className="text-xs uppercase tracking-widest text-white/40 font-medium">
-          Color Theme
-        </h3>
+      <Section title="Color Theme" defaultOpen>
         <div className="grid grid-cols-2 gap-2">
           {Object.entries(COLOR_THEMES).map(([key, theme]) => (
             <button
@@ -301,31 +330,18 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
             </button>
           ))}
         </div>
-      </section>
+      </Section>
 
-      {/* Appearance */}
-      <section className="space-y-3">
-        <h3 className="text-xs uppercase tracking-widest text-white/40 font-medium">
-          Appearance
-        </h3>
-
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm text-white/70">
-            <span>Brightness</span>
-            <span className="text-white/50">
-              {settings.brightness.toFixed(2)}
-            </span>
-          </div>
-          <Slider
-            min={0.1}
-            max={1.0}
-            step={0.05}
-            value={[settings.brightness]}
-            onValueChange={([v]) => update("brightness", v)}
-            className={sliderClass}
-          />
-        </div>
-
+      <Section title="Appearance" defaultOpen>
+        <LiveSlider
+          label="Brightness"
+          value={settings.brightness}
+          min={0.1}
+          max={1.0}
+          step={0.05}
+          formatter={(v) => v.toFixed(2)}
+          onChange={(v) => update("brightness", v)}
+        />
         <LiveSlider
           label="Density"
           value={settings.particleCount}
@@ -335,38 +351,41 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           formatter={(v) => (v / 1000).toFixed(0) + "K"}
           onChange={(v) => update("particleCount", v)}
         />
-      </section>
+      </Section>
 
-      {/* Effects */}
-      <section className="space-y-2">
-        <h3 className="text-xs uppercase tracking-widest text-white/40 font-medium">
-          Effects
-        </h3>
-
+      <Section
+        title="Galactic Structure"
+        badge={[settings.barStructure, settings.armAsymmetry, settings.stellarPopulations].filter(Boolean).length || undefined ? `${[settings.barStructure, settings.armAsymmetry, settings.stellarPopulations].filter(Boolean).length} on` : undefined}
+        defaultOpen={false}
+      >
         <ToggleRow
-          icon={<Sparkles className="w-3.5 h-3.5" />}
-          label="Bloom Glow"
-          active={settings.bloom}
-          onToggle={() => update("bloom", !settings.bloom)}
-          activeColor="bg-fuchsia-600 hover:bg-fuchsia-500"
+          icon={<Minus className="w-3.5 h-3.5" />}
+          label="Bar Structure"
+          active={settings.barStructure}
+          onToggle={() => update("barStructure", !settings.barStructure)}
+          activeColor="bg-amber-600 hover:bg-amber-500"
         />
-
         <ToggleRow
-          icon={<Wind className="w-3.5 h-3.5" />}
-          label="Soft Particles"
-          active={settings.softParticles}
-          onToggle={() => update("softParticles", !settings.softParticles)}
-          activeColor="bg-cyan-600 hover:bg-cyan-500"
+          icon={<Scaling className="w-3.5 h-3.5" />}
+          label="Arm Asymmetry"
+          active={settings.armAsymmetry}
+          onToggle={() => update("armAsymmetry", !settings.armAsymmetry)}
+          activeColor="bg-yellow-600 hover:bg-yellow-500"
         />
-
         <ToggleRow
-          icon={<Globe className="w-3.5 h-3.5" />}
-          label="3D Particles"
-          active={settings.particles3D}
-          onToggle={() => update("particles3D", !settings.particles3D)}
-          activeColor="bg-emerald-600 hover:bg-emerald-500"
+          icon={<Palette className="w-3.5 h-3.5" />}
+          label="Stellar Populations"
+          active={settings.stellarPopulations}
+          onToggle={() => update("stellarPopulations", !settings.stellarPopulations)}
+          activeColor="bg-blue-600 hover:bg-blue-500"
         />
+      </Section>
 
+      <Section
+        title="Disk Features"
+        badge={[settings.dustLanes, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length || undefined ? `${[settings.dustLanes, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length} on` : undefined}
+        defaultOpen={false}
+      >
         <ToggleRow
           icon={<Cloudy className="w-3.5 h-3.5" />}
           label="Dust Lanes"
@@ -374,7 +393,41 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("dustLanes", !settings.dustLanes)}
           activeColor="bg-stone-600 hover:bg-stone-500"
         />
+        <ToggleRow
+          icon={<Flame className="w-3.5 h-3.5" />}
+          label="HII Regions"
+          active={settings.hiiRegions}
+          onToggle={() => update("hiiRegions", !settings.hiiRegions)}
+          activeColor="bg-pink-600 hover:bg-pink-500"
+        />
+        <ToggleRow
+          icon={<Globe className="w-3.5 h-3.5" />}
+          label="3D Particles"
+          active={settings.particles3D}
+          onToggle={() => update("particles3D", !settings.particles3D)}
+          activeColor="bg-emerald-600 hover:bg-emerald-500"
+        />
+        <ToggleRow
+          icon={<Wind className="w-3.5 h-3.5" />}
+          label="Soft Particles"
+          active={settings.softParticles}
+          onToggle={() => update("softParticles", !settings.softParticles)}
+          activeColor="bg-cyan-600 hover:bg-cyan-500"
+        />
+      </Section>
 
+      <Section
+        title="Halo & Companions"
+        badge={[settings.globularClusters, settings.blackHole, settings.companionGalaxy].filter(Boolean).length || undefined ? `${[settings.globularClusters, settings.blackHole, settings.companionGalaxy].filter(Boolean).length} on` : undefined}
+        defaultOpen={false}
+      >
+        <ToggleRow
+          icon={<Orbit className="w-3.5 h-3.5" />}
+          label="Globular Clusters"
+          active={settings.globularClusters}
+          onToggle={() => update("globularClusters", !settings.globularClusters)}
+          activeColor="bg-yellow-600 hover:bg-yellow-500"
+        />
         <ToggleRow
           icon={<Circle className="w-3.5 h-3.5" />}
           label="Black Hole"
@@ -382,7 +435,20 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("blackHole", !settings.blackHole)}
           activeColor="bg-orange-600 hover:bg-orange-500"
         />
+        <ToggleRow
+          icon={<Users className="w-3.5 h-3.5" />}
+          label="Companion Galaxy"
+          active={settings.companionGalaxy}
+          onToggle={() => update("companionGalaxy", !settings.companionGalaxy)}
+          activeColor="bg-purple-600 hover:bg-purple-500"
+        />
+      </Section>
 
+      <Section
+        title="Deep Space"
+        badge={[settings.nebulaBackground, settings.distantGalaxies, settings.regionLabels].filter(Boolean).length || undefined ? `${[settings.nebulaBackground, settings.distantGalaxies, settings.regionLabels].filter(Boolean).length} on` : undefined}
+        defaultOpen={false}
+      >
         <ToggleRow
           icon={<Mountain className="w-3.5 h-3.5" />}
           label="Nebula Background"
@@ -390,7 +456,6 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("nebulaBackground", !settings.nebulaBackground)}
           activeColor="bg-purple-600 hover:bg-purple-500"
         />
-
         <ToggleRow
           icon={<Stars className="w-3.5 h-3.5" />}
           label="Distant Galaxies"
@@ -398,7 +463,18 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("distantGalaxies", !settings.distantGalaxies)}
           activeColor="bg-violet-600 hover:bg-violet-500"
         />
-
+        {settings.distantGalaxies && (
+          <div className="pl-1">
+            <LiveSlider
+              label="Galaxy Count"
+              value={settings.distantGalaxyCount}
+              min={5}
+              max={120}
+              step={5}
+              onChange={(v) => update("distantGalaxyCount", v)}
+            />
+          </div>
+        )}
         <ToggleRow
           icon={<Tag className="w-3.5 h-3.5" />}
           label="Region Labels"
@@ -406,14 +482,23 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("regionLabels", !settings.regionLabels)}
           activeColor="bg-sky-600 hover:bg-sky-500"
         />
-      </section>
+      </Section>
 
-      {/* Camera & Audio */}
-      <section className="space-y-2">
-        <h3 className="text-xs uppercase tracking-widest text-white/40 font-medium">
-          Camera & Audio
-        </h3>
+      <Section
+        title="Atmosphere"
+        badge={settings.bloom ? "1 on" : undefined}
+        defaultOpen={false}
+      >
+        <ToggleRow
+          icon={<Sparkles className="w-3.5 h-3.5" />}
+          label="Bloom Glow"
+          active={settings.bloom}
+          onToggle={() => update("bloom", !settings.bloom)}
+          activeColor="bg-fuchsia-600 hover:bg-fuchsia-500"
+        />
+      </Section>
 
+      <Section title="Camera & Audio" defaultOpen={false}>
         <ToggleRow
           icon={<Camera className="w-3.5 h-3.5" />}
           label="Fly-Through Tour"
@@ -421,7 +506,6 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("flyThrough", !settings.flyThrough)}
           activeColor="bg-rose-600 hover:bg-rose-500"
         />
-
         <ToggleRow
           icon={<Volume2 className="w-3.5 h-3.5" />}
           label="Ambient Sound"
@@ -429,21 +513,15 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("ambientSound", !settings.ambientSound)}
           activeColor="bg-teal-600 hover:bg-teal-500"
         />
-
         <ToggleRow
           icon={settings.autoRotate ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
           label="Auto-Rotate"
           active={settings.autoRotate}
           onToggle={() => update("autoRotate", !settings.autoRotate)}
         />
-      </section>
+      </Section>
 
-      {/* Engine */}
-      <section className="space-y-2">
-        <h3 className="text-xs uppercase tracking-widest text-white/40 font-medium">
-          Engine
-        </h3>
-
+      <Section title="Engine" defaultOpen={false}>
         <ToggleRow
           icon={<Gauge className="w-3.5 h-3.5" />}
           label="Adaptive Quality"
@@ -451,14 +529,12 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           onToggle={() => update("adaptiveQuality", !settings.adaptiveQuality)}
           activeColor="bg-indigo-600 hover:bg-indigo-500"
         />
-
         <ToggleRow
           icon={<Activity className="w-3.5 h-3.5" />}
           label="FPS Counter"
           active={settings.showFPS}
           onToggle={() => update("showFPS", !settings.showFPS)}
         />
-
         <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
           <span className="text-sm text-white/70 font-medium tracking-tight">
             Render Engine
@@ -474,7 +550,13 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
             {settings.force2D ? "2D Mode" : "3D Mode"}
           </button>
         </div>
-      </section>
+      </Section>
+
+      {activeFeatureCount > 0 && (
+        <div className="text-[10px] text-white/30 text-center pt-1 pb-2">
+          {activeFeatureCount} feature{activeFeatureCount === 1 ? "" : "s"} active
+        </div>
+      )}
     </div>
   );
 
@@ -507,10 +589,10 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
     <div className="fixed top-0 left-0 h-full z-50 flex items-stretch pointer-events-none">
       <div
         className={`pointer-events-auto transition-all duration-300 ease-in-out overflow-hidden ${
-          open ? "w-72" : "w-0"
+          open ? "w-80" : "w-0"
         }`}
       >
-        <div className="h-full w-72 bg-black/40 backdrop-blur-xl border-r border-white/10">
+        <div className="h-full w-80 bg-black/40 backdrop-blur-xl border-r border-white/10">
           {panelContent}
         </div>
       </div>

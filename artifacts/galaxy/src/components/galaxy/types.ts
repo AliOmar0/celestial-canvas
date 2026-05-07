@@ -73,7 +73,15 @@ export interface GalaxySettings {
   softParticles: boolean;
   dustLanes: boolean;
   distantGalaxies: boolean;
+  distantGalaxyCount: number;
   particles3D: boolean;
+  // Real-galaxy inspired features
+  hiiRegions: boolean;          // Pink star-forming knots along arms (M83 style)
+  globularClusters: boolean;    // Old yellow clusters in the halo (Andromeda style)
+  stellarPopulations: boolean;  // Yellow bulge → blue arms radial color gradient
+  barStructure: boolean;        // Central bar (NGC 1300 style)
+  armAsymmetry: boolean;        // Each arm has different length / weight
+  companionGalaxy: boolean;     // Small companion off to the side (M51's NGC 5195)
 }
 
 export const DEFAULT_SETTINGS: GalaxySettings = {
@@ -98,7 +106,14 @@ export const DEFAULT_SETTINGS: GalaxySettings = {
   softParticles: false,
   dustLanes: false,
   distantGalaxies: false,
+  distantGalaxyCount: 32,
   particles3D: false,
+  hiiRegions: false,
+  globularClusters: false,
+  stellarPopulations: false,
+  barStructure: false,
+  armAsymmetry: false,
+  companionGalaxy: false,
 };
 
 export type GalaxyPresetKey = "spiral" | "barred" | "compact" | "sparse";

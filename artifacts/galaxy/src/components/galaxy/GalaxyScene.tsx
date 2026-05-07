@@ -242,10 +242,16 @@ const dustFragment = `
 
     // ---- OUTPUT ----
     if (dust < 0.025) discard;
-    // Slight brown-black tint (real dust lanes are deep brown, not pure black)
-    // because cosmic dust reddens the light it absorbs.
-    vec3 dustColor = vec3(0.04, 0.025, 0.015);
-    gl_FragColor = vec4(dustColor, clamp(dust, 0.0, 0.92));
+    // Real cosmic dust is reddish-brown (silicate + carbon grains absorb blue
+    // light preferentially, leaving warm tones). Dense clumps are deep brown,
+    // thinner edges glow slightly warmer where back-scattered starlight bleeds
+    // through. Modulating color by clumpiness gives organic variation.
+    vec3 dustDense = vec3(0.025, 0.015, 0.008);  // deep brown, opaque core
+    vec3 dustEdge  = vec3(0.18,  0.10,  0.05);   // warm amber, thin edges
+    vec3 dustColor = mix(dustEdge, dustDense, clumpiness);
+    // Cap alpha at 0.78 so the densest dust still lets a hint of background
+    // through — pure black blocks look painted, real dust is semi-translucent.
+    gl_FragColor = vec4(dustColor, clamp(dust * 0.85, 0.0, 0.78));
   }
 `;
 
@@ -302,7 +308,7 @@ const distantGalaxyFragment = `
   }
 `;
 
-function DistantGalaxies() {
+function DistantGalaxies({ count }: { count: number }) {
   const galaxies = useMemo(() => {
     const arr: Array<{
       pos: [number, number, number];
@@ -316,7 +322,7 @@ function DistantGalaxies() {
       seed = (seed * 9301 + 49297) % 233280;
       return seed / 233280;
     };
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < count; i++) {
       const phi = rng() * Math.PI * 2;
       const theta = Math.acos(rng() * 2 - 1);
       const r = 80 + rng() * 70;
@@ -342,7 +348,7 @@ function DistantGalaxies() {
       });
     }
     return arr;
-  }, []);
+  }, [count]);
 
   return (
     <>
@@ -365,6 +371,271 @@ function DistantGalaxies() {
         </Billboard>
       ))}
     </>
+  );
+}
+
+/* ---------- HII REGIONS — pink star-forming knots along the arms ----------
+   Inspired by M83, NGC 1672. Real spiral arms have bright pink/magenta
+   blobs where new stars are born — these are HII regions (ionized hydrogen
+   glowing in H-alpha). They cluster on the arms, not in the bulge. */
+
+const hiiFragment = `
+  varying vec2 vUv;
+  uniform vec3 uColor;
+  void main() {
+    float d = length(vUv - 0.5) * 2.0;
+    if (d > 1.0) discard;
+    float core = pow(1.0 - d, 3.5) * 1.0;
+    float halo = pow(1.0 - d, 1.2) * 0.35;
+    float a = clamp(core + halo, 0.0, 1.0) * 0.85;
+    gl_FragColor = vec4(uColor, a);
+  }
+`;
+
+function HIIRegions({
+  arms,
+  tightness,
+}: {
+  arms: number;
+  tightness: number;
+}) {
+  const regions = useMemo(() => {
+    const arr: Array<{ pos: [number, number, number]; size: number; color: [number, number, number] }> = [];
+    let seed = 4242;
+    const rng = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const palette: Array<[number, number, number]> = [
+      [1.0, 0.35, 0.55], // hot pink (H-alpha + dust)
+      [1.0, 0.45, 0.7],  // magenta-pink
+      [0.95, 0.55, 0.8], // soft pink
+      [1.0, 0.6, 0.45],  // warm pink-orange (older HII)
+    ];
+    for (let i = 0; i < 50; i++) {
+      const armIdx = i % arms;
+      const armOffset = (armIdx / arms) * Math.PI * 2;
+      const r = 2.8 + rng() * 9.0;
+      const t = tightness * 4.0 + 0.5;
+      const angle = -(r * t + armOffset) + (rng() - 0.5) * 0.35;
+      const y = (rng() - 0.5) * 0.4;
+      arr.push({
+        pos: [Math.cos(angle) * r, y, Math.sin(angle) * r],
+        size: 0.45 + rng() * 0.7,
+        color: palette[Math.floor(rng() * palette.length)],
+      });
+    }
+    return arr;
+  }, [arms, tightness]);
+
+  return (
+    <>
+      {regions.map((rg, i) => (
+        <Billboard key={i} position={rg.pos}>
+          <mesh>
+            <planeGeometry args={[rg.size, rg.size]} />
+            <shaderMaterial
+              vertexShader={billboardVertex}
+              fragmentShader={hiiFragment}
+              uniforms={{ uColor: { value: new THREE.Vector3(...rg.color) } }}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        </Billboard>
+      ))}
+    </>
+  );
+}
+
+/* ---------- GLOBULAR CLUSTERS — old yellow clusters in the halo ----------
+   Andromeda has 460+ globular clusters. They orbit OUTSIDE the disk plane
+   in a roughly spherical halo, contain ancient (Pop II) stars, and look
+   like tight pale yellow fuzzballs. */
+
+const globularFragment = `
+  varying vec2 vUv;
+  uniform vec3 uColor;
+  void main() {
+    float d = length(vUv - 0.5) * 2.0;
+    if (d > 1.0) discard;
+    float core = pow(1.0 - d, 5.0) * 1.2;     // very tight bright core
+    float halo = pow(1.0 - d, 1.6) * 0.18;    // soft outer fuzz
+    float a = clamp(core + halo, 0.0, 1.0) * 0.7;
+    gl_FragColor = vec4(uColor, a);
+  }
+`;
+
+function GlobularClusters() {
+  const clusters = useMemo(() => {
+    const arr: Array<{ pos: [number, number, number]; size: number; color: [number, number, number] }> = [];
+    let seed = 9173;
+    const rng = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    // Old-population colors: warm cream → pale yellow → faintly orange
+    const palette: Array<[number, number, number]> = [
+      [1.0, 0.92, 0.7],
+      [1.0, 0.85, 0.55],
+      [0.95, 0.88, 0.65],
+      [1.0, 0.78, 0.5],
+    ];
+    for (let i = 0; i < 80; i++) {
+      // Spherical halo distribution, biased toward inner radii
+      const r = 4 + Math.pow(rng(), 0.8) * 18;
+      const phi = rng() * Math.PI * 2;
+      const cosTheta = rng() * 2 - 1;
+      const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
+      arr.push({
+        pos: [
+          r * sinTheta * Math.cos(phi),
+          r * cosTheta * 0.7, // slightly flattened halo
+          r * sinTheta * Math.sin(phi),
+        ],
+        size: 0.18 + rng() * 0.25,
+        color: palette[Math.floor(rng() * palette.length)],
+      });
+    }
+    return arr;
+  }, []);
+
+  return (
+    <>
+      {clusters.map((c, i) => (
+        <Billboard key={i} position={c.pos}>
+          <mesh>
+            <planeGeometry args={[c.size, c.size]} />
+            <shaderMaterial
+              vertexShader={billboardVertex}
+              fragmentShader={globularFragment}
+              uniforms={{ uColor: { value: new THREE.Vector3(...c.color) } }}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        </Billboard>
+      ))}
+    </>
+  );
+}
+
+/* ---------- COMPANION GALAXY — a small elliptical off to the side ----------
+   Inspired by M51's NGC 5195, the small companion locked in tidal embrace
+   with the Whirlpool. Rendered as a dense Gaussian blob of particles offset
+   from the main galaxy. */
+
+const companionVertex = `
+  attribute float aSize;
+  attribute vec3 aColor;
+  attribute float aBrightness;
+  varying vec3 vColor;
+  varying float vBrightness;
+  uniform float uPixelRatio;
+  void main() {
+    vColor = aColor;
+    vBrightness = aBrightness;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = aSize * uPixelRatio * (330.0 / -mvPosition.z);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const companionFragment = `
+  varying vec3 vColor;
+  varying float vBrightness;
+  uniform float uBrightness;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    if (d > 0.5) discard;
+    float intensity = exp(-d * 10.0) * 0.9 + exp(-d * 3.0) * 0.15;
+    vec3 col = mix(vColor, vec3(1.0), exp(-d * 18.0) * 0.7);
+    gl_FragColor = vec4(col, intensity * vBrightness * uBrightness);
+  }
+`;
+
+function CompanionGalaxy({ themeKey, brightness }: { themeKey: string; brightness: number }) {
+  const theme = COLOR_THEMES[themeKey] || COLOR_THEMES.andromeda;
+  const pointsRef = useRef<THREE.Points>(null);
+  const matRef = useRef<THREE.ShaderMaterial>(null);
+
+  const { positions, colors, sizes, brightnesses } = useMemo(() => {
+    const count = 4000;
+    const pos = new Float32Array(count * 3);
+    const col = new Float32Array(count * 3);
+    const siz = new Float32Array(count);
+    const bri = new Float32Array(count);
+    let seed = 7777;
+    const rng = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    // Gaussian-ish distribution: pow(rng, 1.8) clusters toward center
+    for (let i = 0; i < count; i++) {
+      const r = Math.pow(rng(), 1.8) * 2.2;
+      const phi = rng() * Math.PI * 2;
+      const cosTheta = rng() * 2 - 1;
+      const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
+      // Slightly flattened spheroid (elliptical)
+      pos[i * 3] = r * sinTheta * Math.cos(phi) * 1.2;
+      pos[i * 3 + 1] = r * cosTheta * 0.65;
+      pos[i * 3 + 2] = r * sinTheta * Math.sin(phi);
+
+      // Color: warm bulge tones (old population, like a real elliptical)
+      const tFade = r / 2.2;
+      const c0 = theme.core[0] * (1 - tFade) + theme.outer[0] * tFade;
+      const c1 = theme.core[1] * (1 - tFade) + theme.outer[1] * tFade;
+      const c2 = theme.core[2] * (1 - tFade) + theme.outer[2] * tFade;
+      col[i * 3] = Math.min(1, c0);
+      col[i * 3 + 1] = Math.min(1, c1);
+      col[i * 3 + 2] = Math.min(1, c2);
+
+      siz[i] = 0.8 + rng() * 1.4;
+      // Brighter at center, dim at edges
+      bri[i] = (0.4 + rng() * 0.3) * (1 - tFade * 0.6);
+    }
+    return { positions: pos, colors: col, sizes: siz, brightnesses: bri };
+  }, [theme]);
+
+  useEffect(() => {
+    if (pointsRef.current) {
+      const geo = pointsRef.current.geometry;
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
+      geo.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+      geo.setAttribute("aBrightness", new THREE.BufferAttribute(brightnesses, 1));
+    }
+  }, [positions, colors, sizes, brightnesses]);
+
+  useFrame(() => {
+    if (matRef.current) matRef.current.uniforms.uBrightness.value = brightness;
+  });
+
+  return (
+    <group position={[18, 4, -6]}>
+      <points ref={pointsRef}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+          <bufferAttribute attach="attributes-aColor" args={[colors, 3]} />
+          <bufferAttribute attach="attributes-aSize" args={[sizes, 1]} />
+          <bufferAttribute attach="attributes-aBrightness" args={[brightnesses, 1]} />
+        </bufferGeometry>
+        <shaderMaterial
+          ref={matRef}
+          vertexShader={companionVertex}
+          fragmentShader={companionFragment}
+          uniforms={{
+            uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.0) },
+            uBrightness: { value: brightness },
+          }}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+    </group>
   );
 }
 
@@ -537,7 +808,24 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapsho
         >
           <GalaxyParticles settings={settings} />
           <Starfield />
-          {settings.distantGalaxies && <DistantGalaxies />}
+          {settings.distantGalaxies && (
+            <DistantGalaxies count={settings.distantGalaxyCount} />
+          )}
+          {settings.globularClusters && (
+            <group rotation={[settings.tilt, 0, 0]}>
+              <GlobularClusters />
+            </group>
+          )}
+          {settings.companionGalaxy && (
+            <group rotation={[settings.tilt, 0, 0]}>
+              <CompanionGalaxy themeKey={settings.theme} brightness={settings.brightness} />
+            </group>
+          )}
+          {settings.hiiRegions && (
+            <group rotation={[settings.tilt, 0, 0]}>
+              <HIIRegions arms={settings.arms} tightness={settings.tightness} />
+            </group>
+          )}
           {settings.dustLanes && (
             <group rotation={[settings.tilt, 0, 0]}>
               <DustLanes

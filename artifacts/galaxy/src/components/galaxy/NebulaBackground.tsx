@@ -33,10 +33,6 @@ export function NebulaBackground({ themeKey, active }: Props) {
   const c3 = toRgb(theme.dust, 0.12);
   const c4 = toRgb(theme.core, 0.1);
 
-  // Hot-spot colors (small bright distant nebulae)
-  const hot1 = toRgb(theme.mid, 0.45);
-  const hot2 = toRgb(theme.outer, 0.4);
-
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
       {/* Layer 1 — pure black void */}
@@ -86,19 +82,6 @@ export function NebulaBackground({ themeKey, active }: Props) {
         <rect width="100%" height="100%" filter="url(#cosmic-cirrus)" />
       </svg>
 
-      {/* Layer 4 — distant hot spots (faint pinprick nebulae) */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: `
-            radial-gradient(circle 40px at 22% 35%, ${hot1} 0%, transparent 100%),
-            radial-gradient(circle 32px at 78% 58%, ${hot2} 0%, transparent 100%),
-            radial-gradient(circle 28px at 55% 22%, ${hot1} 0%, transparent 100%),
-            radial-gradient(circle 24px at 35% 75%, ${hot2} 0%, transparent 100%),
-            radial-gradient(circle 18px at 92% 30%, ${hot1} 0%, transparent 100%)
-          `,
-        }}
-      />
     </div>
   );
 }
