@@ -149,50 +149,103 @@ function BlackHole({ themeKey }: { themeKey: string }) {
 
 const dustVertex = billboardVertex;
 
-// Matches GalaxyParticles spiral: spiralAngle = r * (tightness*4 + 0.5).
-// Outputs OPAQUE BLACK with alpha — drawn over particles using NormalBlending
-// so dust appears as visible dark filaments regardless of what's underneath.
+// Inspired by real galactic dust: M51, NGC 1300, M83, Andromeda.
+// Real dust lanes are FILAMENTARY networks with:
+//  - multiple parallel sub-lanes per arm (not a single stripe)
+//  - fractal noise breaking them into clumps and tendrils
+//  - variable opacity (some sections opaque, some thin gaps)
+//  - branching, organic structure
+// This shader uses fBm noise modulating multiple offset bands per arm.
 const dustFragment = `
   varying vec2 vUv;
   uniform float uArms;
   uniform float uTightness;
   uniform float uPlaneSize;
 
-  // 2D hash for cheap per-pixel jitter so the bands don't look perfectly clean
+  // ---- Noise primitives (value noise + fBm) ----
   float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(i + vec2(0.0, 0.0)), hash(i + vec2(1.0, 0.0)), u.x),
+      mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+      u.y
+    );
+  }
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      v += a * noise(p);
+      p *= 2.07;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  // Single arm-following band: phase offset, width, opacity multiplier.
+  // The band is sharp where pow exponent is high.
+  float armBand(float armPhase, float offset, float width, float opacity) {
+    float c = cos(armPhase + offset);
+    return pow(max(0.0, c), width) * opacity;
   }
 
   void main() {
     vec2 worldPos = (vUv - 0.5) * uPlaneSize;
     float r = length(worldPos);
     if (r < 0.8 || r > 14.5) discard;
-    // Plane is rotated [-PI/2, 0, 0] to lie flat in XZ, so local +Y maps to
-    // world -Z. Negating Y recovers the true particle angle.
+    // Plane is rotated [-PI/2, 0, 0] — negate Y to recover true particle angle.
     float theta = atan(-worldPos.y, worldPos.x);
 
     float t = uTightness * 4.0 + 0.5;
     float armPhase = (theta - r * t) * uArms;
 
-    // Sharp dark filament riding the leading edge of each arm.
-    // Use a narrow Gaussian-like band: cos shifted, raised to high power.
-    float c1 = cos(armPhase + 0.55);
-    float band = pow(max(0.0, c1), 14.0);
-    // Faint secondary band on the trailing side
-    float c2 = cos(armPhase - 1.4);
-    float band2 = pow(max(0.0, c2), 22.0) * 0.4;
-    float dust = band + band2;
+    // ---- MULTIPLE PARALLEL SUB-LANES per arm ----
+    // Real galaxies have a dominant dust lane on the leading edge plus
+    // secondary tendrils. We sum 4 bands at different offsets/widths.
+    float dust = 0.0;
+    dust += armBand(armPhase,  0.55, 18.0, 1.00); // primary leading lane (sharp)
+    dust += armBand(armPhase,  0.30,  8.0, 0.45); // soft inner shoulder
+    dust += armBand(armPhase,  0.85, 30.0, 0.55); // thin trailing wisp
+    dust += armBand(armPhase, -1.20, 24.0, 0.35); // far trailing fragment
 
-    // Per-pixel jitter so bands look organic, not painted
-    dust *= 0.78 + 0.22 * hash(floor(worldPos * 2.5));
+    // ---- FRACTAL BREAKUP — turns smooth bands into a filamentary network ----
+    // Sample fBm in arm-following coordinates so the noise drifts WITH the arm,
+    // not perpendicular to it (which would just create blobs).
+    vec2 armCoord = vec2(armPhase * 0.35, log(r + 0.5) * 1.8);
+    float bigClumps = fbm(armCoord * 1.2);              // 0..1 large clumps
+    float smallDetail = fbm(armCoord * 4.5 + 13.7);     // 0..1 fine grain
+    float clumpiness = bigClumps * 0.7 + smallDetail * 0.3;
 
-    // Radial fade — clean core, fade out past disk edge
-    float radialFade = smoothstep(1.0, 2.6, r) * (1.0 - smoothstep(10.5, 14.5, r));
+    // Apply clumpiness as a multiplier with deep gaps:
+    // 0.45 minimum keeps lanes connected, 1.55 peak makes some sections darker.
+    dust *= 0.45 + clumpiness * 1.10;
+
+    // Carve OUT bright gaps where noise is very low (real dust has holes
+    // where blue star clusters punch through).
+    float gaps = smoothstep(0.18, 0.05, smallDetail);
+    dust *= 1.0 - gaps * 0.7;
+
+    // ---- BRANCHING TENDRILS — perpendicular noise warps band edges ----
+    // Add a small angular wobble so straight arms get wavy edges.
+    float wobble = (fbm(vec2(r * 0.8, theta * 4.0)) - 0.5) * 0.25;
+    float wobbledPhase = armPhase + wobble * uArms;
+    dust += armBand(wobbledPhase, 0.55, 22.0, 0.6) * (0.5 + 0.5 * smallDetail);
+
+    // ---- RADIAL FADE — clean core, fade past disk edge ----
+    float radialFade = smoothstep(1.2, 3.0, r) * (1.0 - smoothstep(10.0, 14.5, r));
     dust *= radialFade;
 
-    if (dust < 0.02) discard;
-    // Output: pure black with alpha proportional to dust intensity (max ~0.9)
-    gl_FragColor = vec4(0.0, 0.0, 0.0, clamp(dust, 0.0, 0.9));
+    // ---- OUTPUT ----
+    if (dust < 0.025) discard;
+    // Slight brown-black tint (real dust lanes are deep brown, not pure black)
+    // because cosmic dust reddens the light it absorbs.
+    vec3 dustColor = vec3(0.04, 0.025, 0.015);
+    gl_FragColor = vec4(dustColor, clamp(dust, 0.0, 0.92));
   }
 `;
 
