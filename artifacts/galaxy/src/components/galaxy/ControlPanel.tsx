@@ -36,12 +36,19 @@ import {
   Scaling,
   Users,
   Eye,
+  Link2,
+  Check,
 } from "lucide-react";
 
 interface Props {
   settings: GalaxySettings;
   onChange: (s: GalaxySettings) => void;
   onSnapshot?: () => void;
+  onShare?: () => Promise<boolean> | boolean;
+}
+
+function rgbCss(c: [number, number, number]) {
+  return `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`;
 }
 
 const sliderClass =
@@ -151,10 +158,20 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
-export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
+export function ControlPanel({ settings, onChange, onSnapshot, onShare }: Props) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(!isMobile);
-  const [tab, setTab] = useState<TabId>("style");
+  const [tab, setTab] = useState<TabId>("system");
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    if (!onShare) return;
+    const ok = await onShare();
+    if (ok) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
+  };
 
   useEffect(() => {
     setOpen(!isMobile);
@@ -233,13 +250,27 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
             <button
               key={key}
               onClick={() => update("theme", key)}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                 settings.theme === key
                   ? "bg-white/20 text-white ring-1 ring-white/40"
                   : "bg-white/5 text-white/55 hover:bg-white/10 hover:text-white/80"
               }`}
             >
-              {theme.name}
+              <span className="flex shrink-0 -space-x-1">
+                <span
+                  className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40"
+                  style={{ background: rgbCss(theme.core) }}
+                />
+                <span
+                  className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40"
+                  style={{ background: rgbCss(theme.mid) }}
+                />
+                <span
+                  className="w-2.5 h-2.5 rounded-full ring-1 ring-black/40"
+                  style={{ background: rgbCss(theme.outer) }}
+                />
+              </span>
+              <span className="truncate">{theme.name}</span>
             </button>
           ))}
         </div>
@@ -522,11 +553,11 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
             Galaxy Controls
           </h2>
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-4 gap-1">
           <button
             onClick={randomize}
-            title="Randomize"
-            className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium bg-white/10 text-white hover:bg-white/20 transition-all"
+            title="Randomize settings"
+            className="flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-md text-[11px] font-medium bg-white/10 text-white hover:bg-white/20 transition-all"
           >
             <Shuffle className="w-3 h-3" />
             Random
@@ -534,16 +565,32 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           <button
             onClick={reset}
             title="Reset to defaults"
-            className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-all"
+            className="flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-md text-[11px] font-medium bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-all"
           >
             <RotateCcw className="w-3 h-3" />
             Reset
           </button>
+          {onShare ? (
+            <button
+              onClick={handleShare}
+              title="Copy a shareable link to this exact galaxy"
+              className={`flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-md text-[11px] font-medium transition-all ${
+                copied
+                  ? "bg-emerald-600 text-white"
+                  : "bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {copied ? <Check className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+              {copied ? "Copied" : "Link"}
+            </button>
+          ) : (
+            <div />
+          )}
           {onSnapshot ? (
             <button
               onClick={onSnapshot}
               title="Save snapshot as PNG"
-              className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white hover:from-indigo-500 hover:to-fuchsia-500 transition-all"
+              className="flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-md text-[11px] font-medium bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white hover:from-indigo-500 hover:to-fuchsia-500 transition-all"
             >
               <Download className="w-3 h-3" />
               Save
