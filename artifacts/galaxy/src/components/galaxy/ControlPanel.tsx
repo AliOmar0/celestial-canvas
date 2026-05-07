@@ -28,6 +28,7 @@ import {
   Cloudy,
   Stars,
   Download,
+  Globe,
 } from "lucide-react";
 
 interface Props {
@@ -356,6 +357,14 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
           active={settings.softParticles}
           onToggle={() => update("softParticles", !settings.softParticles)}
           activeColor="bg-cyan-600 hover:bg-cyan-500"
+        />
+
+        <ToggleRow
+          icon={<Globe className="w-3.5 h-3.5" />}
+          label="3D Particles"
+          active={settings.particles3D}
+          onToggle={() => update("particles3D", !settings.particles3D)}
+          activeColor="bg-emerald-600 hover:bg-emerald-500"
         />
 
         <ToggleRow

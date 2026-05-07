@@ -40,6 +40,7 @@ const fragmentShader = `
   uniform float uBrightness;
   uniform float uBloom;
   uniform float uSoft;
+  uniform float uParticle3D;
 
   void main() {
     float dist = length(gl_PointCoord - 0.5);
@@ -50,6 +51,22 @@ const fragmentShader = `
     float falloffStart = mix(0.45, 0.05, uSoft);
     float alphaMask = smoothstep(0.5, falloffStart, dist);
     if (alphaMask < 0.001) discard;
+
+    // 3D Particles: fake a lit-sphere shading from a fixed light direction.
+    // This breaks the symmetry of flat sprites and makes them feel volumetric.
+    float shade = 1.0;
+    if (uParticle3D > 0.5) {
+      vec2 n = (gl_PointCoord - 0.5) * 2.0;
+      float r2 = dot(n, n);
+      if (r2 < 1.0) {
+        float z = sqrt(1.0 - r2);
+        vec3 normal = vec3(n.x, -n.y, z);
+        vec3 light = normalize(vec3(-0.55, 0.55, 0.62));
+        float ndl = max(0.0, dot(normal, light));
+        shade = 0.28 + 0.95 * pow(ndl, 1.4);
+      }
+    }
+    finalBrightness *= shade;
 
     if (vType < 0.5) {
       // STAR RENDERING
@@ -224,6 +241,7 @@ export function GalaxyParticles({ settings }: Props) {
       materialRef.current.uniforms.uBrightness.value = settings.brightness;
       materialRef.current.uniforms.uBloom.value = settings.bloom ? 2.4 : 1.0;
       materialRef.current.uniforms.uSoft.value = settings.softParticles ? 1.0 : 0.0;
+      materialRef.current.uniforms.uParticle3D.value = settings.particles3D ? 1.0 : 0.0;
     }
   });
 
@@ -248,6 +266,7 @@ export function GalaxyParticles({ settings }: Props) {
             uBrightness: { value: 1.0 },
             uBloom: { value: 1.0 },
             uSoft: { value: 0.0 },
+            uParticle3D: { value: 0.0 },
           }}
           transparent
           depthWrite={false}

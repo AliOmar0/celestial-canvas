@@ -149,43 +149,70 @@ function BlackHole({ themeKey }: { themeKey: string }) {
 
 const dustVertex = billboardVertex;
 
+// Matches GalaxyParticles spiral: spiralAngle = r * (tightness*4 + 0.5)
+// Dust lanes appear as dark filaments riding along the leading edge of each arm.
 const dustFragment = `
   varying vec2 vUv;
   uniform float uArms;
   uniform float uTightness;
+  uniform float uPlaneSize;
+
   void main() {
-    vec2 p = vUv - 0.5;
-    float r = length(p) * 2.0;
-    if (r < 0.08 || r > 0.95) { gl_FragColor = vec4(1.0); return; }
-    float theta = atan(p.y, p.x);
-    float spiral = theta + log(r * 6.0 + 0.5) * uTightness * 2.0;
-    float band = sin(spiral * uArms);
-    float dust = smoothstep(0.35, 0.95, band);
-    // Add some asymmetric noise via second harmonic
-    dust *= 0.7 + 0.3 * sin(spiral * uArms * 2.0 + 1.7);
-    float radialFalloff = smoothstep(0.08, 0.22, r) * (1.0 - smoothstep(0.6, 0.95, r));
-    dust *= radialFalloff * 0.55; // max darkening ~55%
+    vec2 worldPos = (vUv - 0.5) * uPlaneSize;
+    float r = length(worldPos);
+    if (r < 1.2 || r > 14.0) { gl_FragColor = vec4(1.0); return; }
+    float theta = atan(worldPos.y, worldPos.x);
+
+    float t = uTightness * 4.0 + 0.5;
+    // Phase = 0 along the arm spine; offset puts dust on the leading edge
+    float armPhase = (theta - r * t) * uArms;
+    // Dark band: peaks where cos(armPhase + offset) is ~1 (just inside the arm)
+    float band = pow(max(0.0, cos(armPhase + 0.6)), 8.0);
+    // Add a faint secondary band on the trailing side
+    float band2 = pow(max(0.0, cos(armPhase - 1.2)), 12.0) * 0.4;
+    float dust = band + band2;
+
+    // Radial fade — no dust right at the core or past the disk edge
+    float radialFade = smoothstep(1.2, 3.0, r) * (1.0 - smoothstep(10.0, 14.0, r));
+    dust *= radialFade * 0.7; // up to 70% darkening
     vec3 col = vec3(1.0 - dust);
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-function DustLanes({ arms, tightness }: { arms: number; tightness: number }) {
+function DustLanes({
+  arms,
+  tightness,
+  rotationSpeed,
+}: {
+  arms: number;
+  tightness: number;
+  rotationSpeed: number;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    // Rotate around disk normal so lanes track with the spinning particles
+    if (groupRef.current) groupRef.current.rotation.z += delta * rotationSpeed * 0.1;
+  });
+  const planeSize = 32;
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
-      <planeGeometry args={[34, 34]} />
-      <shaderMaterial
-        vertexShader={dustVertex}
-        fragmentShader={dustFragment}
-        uniforms={{
-          uArms: { value: arms },
-          uTightness: { value: tightness },
-        }}
-        transparent
-        depthWrite={false}
-        blending={THREE.MultiplyBlending}
-      />
-    </mesh>
+    <group ref={groupRef} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh renderOrder={2}>
+        <planeGeometry args={[planeSize, planeSize]} />
+        <shaderMaterial
+          vertexShader={dustVertex}
+          fragmentShader={dustFragment}
+          uniforms={{
+            uArms: { value: arms },
+            uTightness: { value: tightness },
+            uPlaneSize: { value: planeSize },
+          }}
+          transparent
+          depthWrite={false}
+          blending={THREE.MultiplyBlending}
+        />
+      </mesh>
+    </group>
   );
 }
 
@@ -221,16 +248,19 @@ function DistantGalaxies() {
       seed = (seed * 9301 + 49297) % 233280;
       return seed / 233280;
     };
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 32; i++) {
       const phi = rng() * Math.PI * 2;
       const theta = Math.acos(rng() * 2 - 1);
-      const r = 90 + rng() * 50;
+      const r = 80 + rng() * 70;
       const palette: Array<[number, number, number]> = [
         [1.0, 0.9, 0.7],
         [0.7, 0.8, 1.0],
         [1.0, 0.6, 0.7],
         [0.6, 0.9, 0.9],
         [0.9, 0.7, 1.0],
+        [1.0, 0.75, 0.5],
+        [0.85, 0.95, 0.85],
+        [0.95, 0.6, 0.95],
       ];
       arr.push({
         pos: [
@@ -238,8 +268,8 @@ function DistantGalaxies() {
           r * Math.cos(theta),
           r * Math.sin(theta) * Math.sin(phi),
         ],
-        size: 4 + rng() * 6,
-        aspect: 1.4 + rng() * 1.6,
+        size: 3 + rng() * 7,
+        aspect: 1.2 + rng() * 1.8,
         color: palette[Math.floor(rng() * palette.length)],
       });
     }
@@ -442,7 +472,11 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapsho
           {settings.distantGalaxies && <DistantGalaxies />}
           {settings.dustLanes && (
             <group rotation={[settings.tilt, 0, 0]}>
-              <DustLanes arms={settings.arms} tightness={settings.tightness} />
+              <DustLanes
+                arms={settings.arms}
+                tightness={settings.tightness}
+                rotationSpeed={settings.rotationSpeed}
+              />
             </group>
           )}
           {settings.blackHole && (

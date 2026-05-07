@@ -73,6 +73,7 @@ export interface GalaxySettings {
   softParticles: boolean;
   dustLanes: boolean;
   distantGalaxies: boolean;
+  particles3D: boolean;
 }
 
 export const DEFAULT_SETTINGS: GalaxySettings = {
@@ -97,6 +98,7 @@ export const DEFAULT_SETTINGS: GalaxySettings = {
   softParticles: false,
   dustLanes: false,
   distantGalaxies: false,
+  particles3D: false,
 };
 
 export type GalaxyPresetKey = "spiral" | "barred" | "compact" | "sparse";
