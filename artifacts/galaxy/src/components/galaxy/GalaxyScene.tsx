@@ -160,21 +160,24 @@ const dustFragment = `
   void main() {
     vec2 worldPos = (vUv - 0.5) * uPlaneSize;
     float r = length(worldPos);
-    if (r < 1.2 || r > 14.0) { gl_FragColor = vec4(1.0); return; }
-    float theta = atan(worldPos.y, worldPos.x);
+    if (r < 0.8 || r > 14.5) { gl_FragColor = vec4(1.0); return; }
+    // NOTE: plane is rotated [-PI/2, 0, 0] to lay flat in XZ, which makes
+    // local +Y point at world -Z. So we negate Y to recover the *real* particle
+    // angle and align dust bands with the actual spiral arms.
+    float theta = atan(-worldPos.y, worldPos.x);
 
     float t = uTightness * 4.0 + 0.5;
-    // Phase = 0 along the arm spine; offset puts dust on the leading edge
+    // Phase = 0 along the arm spine; offset puts dust on the inner/leading edge.
     float armPhase = (theta - r * t) * uArms;
-    // Dark band: peaks where cos(armPhase + offset) is ~1 (just inside the arm)
-    float band = pow(max(0.0, cos(armPhase + 0.6)), 8.0);
-    // Add a faint secondary band on the trailing side
-    float band2 = pow(max(0.0, cos(armPhase - 1.2)), 12.0) * 0.4;
+    // Dark band: a sharp dust filament riding the inner edge of each arm
+    float band = pow(max(0.0, cos(armPhase + 0.45)), 6.0);
+    // Faint secondary band on the trailing side
+    float band2 = pow(max(0.0, cos(armPhase - 1.3)), 14.0) * 0.35;
     float dust = band + band2;
 
-    // Radial fade — no dust right at the core or past the disk edge
-    float radialFade = smoothstep(1.2, 3.0, r) * (1.0 - smoothstep(10.0, 14.0, r));
-    dust *= radialFade * 0.7; // up to 70% darkening
+    // Radial fade — keep the core clean and fade past the disk edge
+    float radialFade = smoothstep(0.8, 2.2, r) * (1.0 - smoothstep(11.0, 14.5, r));
+    dust *= radialFade * 0.8; // up to 80% darkening
     vec3 col = vec3(1.0 - dust);
     gl_FragColor = vec4(col, 1.0);
   }

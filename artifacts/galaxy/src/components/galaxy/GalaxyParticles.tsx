@@ -15,6 +15,7 @@ const vertexShader = `
   uniform float uPixelRatio;
   uniform float uBrightness;
   uniform float uDensityFactor;
+  uniform float uParticle3D;
 
   void main() {
     vColor = aColor;
@@ -26,6 +27,9 @@ const vertexShader = `
     
     if (vType == 1.0) gl_PointSize *= 2.5; // Gas is larger
     if (vType == 2.0) gl_PointSize *= 4.0; // Dust lanes are very large
+    
+    // 3D mode: enlarge sprites so the lit-sphere shading is actually visible
+    if (uParticle3D > 0.5) gl_PointSize *= 2.2;
     
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -52,21 +56,30 @@ const fragmentShader = `
     float alphaMask = smoothstep(0.5, falloffStart, dist);
     if (alphaMask < 0.001) discard;
 
-    // 3D Particles: fake a lit-sphere shading from a fixed light direction.
-    // This breaks the symmetry of flat sprites and makes them feel volumetric.
-    float shade = 1.0;
+    // 3D Particles: fake a lit-sphere shading from a fixed light direction
+    // plus a high-contrast specular hot-spot. With additive blending the
+    // result is bright lit-side highlights with darker shaded backsides,
+    // giving each particle real volumetric presence.
     if (uParticle3D > 0.5) {
       vec2 n = (gl_PointCoord - 0.5) * 2.0;
       float r2 = dot(n, n);
       if (r2 < 1.0) {
         float z = sqrt(1.0 - r2);
         vec3 normal = vec3(n.x, -n.y, z);
-        vec3 light = normalize(vec3(-0.55, 0.55, 0.62));
+        vec3 light = normalize(vec3(-0.6, 0.6, 0.65));
         float ndl = max(0.0, dot(normal, light));
-        shade = 0.28 + 0.95 * pow(ndl, 1.4);
+        // Diffuse term with a low ambient floor so shaded sides go nearly dark
+        float diffuse = 0.08 + 1.4 * pow(ndl, 1.1);
+        // Specular hot-spot near the lit pole — punches up the highlight
+        vec3 viewDir = vec3(0.0, 0.0, 1.0);
+        vec3 halfDir = normalize(light + viewDir);
+        float spec = pow(max(0.0, dot(normal, halfDir)), 16.0) * 0.9;
+        float shade = diffuse + spec;
+        // Tighten alpha mask too so each sprite reads as a discrete sphere
+        alphaMask = pow(alphaMask, 1.4);
+        finalBrightness *= shade;
       }
     }
-    finalBrightness *= shade;
 
     if (vType < 0.5) {
       // STAR RENDERING
