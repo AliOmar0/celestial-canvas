@@ -42,6 +42,13 @@ export const COLOR_THEMES: Record<string, ColorTheme> = {
     outer: [0.4, 0.4, 0.4],
     dust: [0.15, 0.15, 0.15],
   },
+  andromeda: {
+    name: "Andromeda",
+    core: [1.0, 0.98, 0.9],
+    mid: [0.5, 0.6, 1.0],
+    outer: [0.8, 0.3, 0.7],
+    dust: [1.0, 0.2, 0.6],
+  },
 };
 
 export interface GalaxySettings {
@@ -51,13 +58,19 @@ export interface GalaxySettings {
   tilt: number;
   particleCount: number;
   theme: string;
+  brightness: number;
+  dispersion: number;
+  force2D: boolean;
 }
 
 export const DEFAULT_SETTINGS: GalaxySettings = {
-  arms: 4,
-  tightness: 0.5,
-  rotationSpeed: 0.3,
-  tilt: 0.4,
-  particleCount: 80000,
-  theme: "milkyway",
+  arms: 2,
+  tightness: 0.1,
+  rotationSpeed: 0.0,
+  tilt: 0.0,
+  particleCount: 25000,
+  theme: "andromeda",
+  brightness: 0.1,
+  dispersion: 0.5,
+  force2D: false,
 };
