@@ -85,24 +85,100 @@ function FPSCounter() {
   );
 }
 
+const accretionVertex = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const accretionFragment = `
+  varying vec2 vUv;
+  uniform float uTime;
+  void main() {
+    float r = vUv.x;
+    float ang = vUv.y * 6.28318;
+    float swirl = sin(ang * 6.0 + uTime * 1.2 + r * 18.0) * 0.5 + 0.5;
+    swirl = mix(0.6, 1.0, swirl);
+    float inner = smoothstep(0.0, 0.18, r);
+    float outer = 1.0 - smoothstep(0.55, 1.0, r);
+    float bright = inner * outer;
+    vec3 hot = vec3(1.0, 0.95, 0.7);
+    vec3 mid = vec3(1.0, 0.55, 0.15);
+    vec3 cool = vec3(0.65, 0.15, 0.05);
+    vec3 col = mix(hot, mid, smoothstep(0.0, 0.35, r));
+    col = mix(col, cool, smoothstep(0.45, 1.0, r));
+    col *= swirl;
+    float alpha = bright * 0.95;
+    gl_FragColor = vec4(col, alpha);
+  }
+`;
+
+const haloFragment = `
+  varying vec2 vUv;
+  void main() {
+    float d = length(vUv - 0.5) * 2.0;
+    float a = 1.0 - smoothstep(0.0, 1.0, d);
+    a = pow(a, 2.5) * 0.6;
+    vec3 col = mix(vec3(1.0, 0.6, 0.2), vec3(0.4, 0.1, 0.05), d);
+    gl_FragColor = vec4(col, a);
+  }
+`;
+
 function BlackHole() {
-  const ringRef = useRef<THREE.Mesh>(null);
+  const diskRef = useRef<THREE.Mesh>(null);
+  const diskMatRef = useRef<THREE.ShaderMaterial>(null);
+  const photonRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+  const haloRef = useRef<THREE.Mesh>(null);
+
   useFrame((_, delta) => {
-    if (ringRef.current) ringRef.current.rotation.z += delta * 0.6;
+    if (diskRef.current) diskRef.current.rotation.z += delta * 0.4;
+    if (photonRef.current) photonRef.current.rotation.z -= delta * 0.8;
+    if (diskMatRef.current) diskMatRef.current.uniforms.uTime.value += delta;
+    if (haloRef.current) haloRef.current.lookAt(camera.position);
   });
+
   return (
     <group>
+      {/* Soft halo billboard behind everything */}
+      <mesh ref={haloRef} renderOrder={-1}>
+        <planeGeometry args={[5, 5]} />
+        <shaderMaterial
+          vertexShader={accretionVertex}
+          fragmentShader={haloFragment}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Event horizon — pure black sphere */}
       <mesh>
-        <sphereGeometry args={[0.45, 16, 16]} />
+        <sphereGeometry args={[0.55, 64, 64]} />
         <meshBasicMaterial color="#000" />
       </mesh>
-      <mesh ref={ringRef} rotation={[Math.PI / 2.4, 0, 0]}>
-        <torusGeometry args={[0.85, 0.06, 12, 64]} />
-        <meshBasicMaterial color="#ffaa55" toneMapped={false} transparent opacity={0.85} />
+
+      {/* Accretion disk — shader-based radial gradient ring */}
+      <mesh ref={diskRef} rotation={[Math.PI / 2.3, 0, 0]}>
+        <ringGeometry args={[0.7, 2.4, 128, 1]} />
+        <shaderMaterial
+          ref={diskMatRef}
+          vertexShader={accretionVertex}
+          fragmentShader={accretionFragment}
+          uniforms={{ uTime: { value: 0 } }}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          side={THREE.DoubleSide}
+        />
       </mesh>
-      <mesh rotation={[Math.PI / 2.4, 0, 0]}>
-        <torusGeometry args={[1.05, 0.02, 8, 64]} />
-        <meshBasicMaterial color="#ff5522" toneMapped={false} transparent opacity={0.5} />
+
+      {/* Photon ring — thin bright torus near the horizon */}
+      <mesh ref={photonRef} rotation={[Math.PI / 2.3, 0, 0]}>
+        <torusGeometry args={[0.68, 0.012, 16, 128]} />
+        <meshBasicMaterial color="#fff5cc" toneMapped={false} transparent opacity={0.95} />
       </mesh>
     </group>
   );
@@ -240,7 +316,7 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange }: Props) {
           gl={{
             antialias: false,
             powerPreference: "high-performance",
-            alpha: false,
+            alpha: true,
             stencil: false,
             depth: true,
           }}

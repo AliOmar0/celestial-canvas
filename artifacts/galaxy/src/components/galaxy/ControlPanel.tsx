@@ -113,13 +113,13 @@ export function ControlPanel({ settings, onChange }: Props) {
 
   const reset = () => onChange({ ...DEFAULT_SETTINGS });
 
-  const LagFreeSlider = ({
+  const LiveSlider = ({
     label,
     value,
     min,
     max,
     step,
-    onCommit,
+    onChange: onLiveChange,
     formatter = (v: number) => v.toString(),
   }: {
     label: string;
@@ -127,32 +127,24 @@ export function ControlPanel({ settings, onChange }: Props) {
     min: number;
     max: number;
     step: number;
-    onCommit: (v: number) => void;
+    onChange: (v: number) => void;
     formatter?: (v: number) => string;
-  }) => {
-    const [localValue, setLocalValue] = useState(value);
-    useEffect(() => {
-      setLocalValue(value);
-    }, [value]);
-
-    return (
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm text-white/70">
-          <span>{label}</span>
-          <span className="text-white/50">{formatter(localValue)}</span>
-        </div>
-        <Slider
-          min={min}
-          max={max}
-          step={step}
-          value={[localValue]}
-          onValueChange={([v]) => setLocalValue(v)}
-          onValueCommit={([v]) => onCommit(v)}
-          className={sliderClass}
-        />
+  }) => (
+    <div className="space-y-2">
+      <div className="flex justify-between text-sm text-white/70">
+        <span>{label}</span>
+        <span className="text-white/50">{formatter(value)}</span>
       </div>
-    );
-  };
+      <Slider
+        min={min}
+        max={max}
+        step={step}
+        value={[value]}
+        onValueChange={([v]) => onLiveChange(v)}
+        className={sliderClass}
+      />
+    </div>
+  );
 
   const panelContent = (
     <div className="flex flex-col gap-6 p-6 overflow-y-auto h-full">
@@ -205,23 +197,23 @@ export function ControlPanel({ settings, onChange }: Props) {
           Shape
         </h3>
 
-        <LagFreeSlider
+        <LiveSlider
           label="Spiral Arms"
           value={settings.arms}
           min={2}
           max={6}
           step={1}
-          onCommit={(v) => update("arms", v)}
+          onChange={(v) => update("arms", v)}
         />
 
-        <LagFreeSlider
+        <LiveSlider
           label="Arm Tightness"
           value={settings.tightness}
           min={0.1}
           max={1}
           step={0.05}
           formatter={(v) => v.toFixed(2)}
-          onCommit={(v) => update("tightness", v)}
+          onChange={(v) => update("tightness", v)}
         />
 
         <div className="space-y-2">
@@ -241,14 +233,14 @@ export function ControlPanel({ settings, onChange }: Props) {
           />
         </div>
 
-        <LagFreeSlider
+        <LiveSlider
           label="Dispersion"
           value={settings.dispersion}
           min={0.5}
           max={3.0}
           step={0.05}
           formatter={(v) => v.toFixed(2)}
-          onCommit={(v) => update("dispersion", v)}
+          onChange={(v) => update("dispersion", v)}
         />
 
         <div className="space-y-2">
@@ -314,14 +306,14 @@ export function ControlPanel({ settings, onChange }: Props) {
           />
         </div>
 
-        <LagFreeSlider
+        <LiveSlider
           label="Density"
           value={settings.particleCount}
           min={5000}
           max={150000}
           step={5000}
           formatter={(v) => (v / 1000).toFixed(0) + "K"}
-          onCommit={(v) => update("particleCount", v)}
+          onChange={(v) => update("particleCount", v)}
         />
       </section>
 

@@ -21,6 +21,14 @@ const Index = () => {
       </div>
       <ControlPanel settings={settings} onChange={setSettings} />
       <AmbientSound active={settings.ambientSound} intensity={settings.rotationSpeed} />
+      {/* Cinematic vignette */}
+      <div
+        className="pointer-events-none absolute inset-0 z-10"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%)",
+        }}
+      />
     </div>
   );
 };
