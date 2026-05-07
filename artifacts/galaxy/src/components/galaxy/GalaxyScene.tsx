@@ -145,150 +145,111 @@ function BlackHole({ themeKey }: { themeKey: string }) {
   );
 }
 
-/* ---------- DUST LANES — multiply-blended dark spiral filaments ---------- */
+/* ---------- OPEN STAR CLUSTERS — bright young blue clusters along arms ---------- */
 
-const dustVertex = billboardVertex;
-
-// Inspired by real galactic dust: M51, NGC 1300, M83, Andromeda.
-// Real dust lanes are FILAMENTARY networks with:
-//  - multiple parallel sub-lanes per arm (not a single stripe)
-//  - fractal noise breaking them into clumps and tendrils
-//  - variable opacity (some sections opaque, some thin gaps)
-//  - branching, organic structure
-// This shader uses fBm noise modulating multiple offset bands per arm.
-const dustFragment = `
+// Inspired by Pleiades (M45), NGC 3603, Westerlund 1, h+chi Persei.
+// Open clusters are loose groupings of ~50–1000 young hot blue stars
+// formed together from the same molecular cloud. They sit IN the spiral
+// arms (Pop I) and are visually distinct from old yellow globular clusters
+// in the halo. Each cluster is a small soft blue glow with a brighter core
+// and a sprinkle of pinpoint star highlights.
+const openClusterFragment = `
   varying vec2 vUv;
-  uniform float uArms;
-  uniform float uTightness;
-  uniform float uPlaneSize;
+  uniform vec3 uColor;
+  uniform float uSeed;
 
-  // ---- Noise primitives (value noise + fBm) ----
   float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-  }
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(
-      mix(hash(i + vec2(0.0, 0.0)), hash(i + vec2(1.0, 0.0)), u.x),
-      mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
-      u.y
-    );
-  }
-  float fbm(vec2 p) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 5; i++) {
-      v += a * noise(p);
-      p *= 2.07;
-      a *= 0.5;
-    }
-    return v;
-  }
-
-  // Single arm-following band: phase offset, width, opacity multiplier.
-  // The band is sharp where pow exponent is high.
-  float armBand(float armPhase, float offset, float width, float opacity) {
-    float c = cos(armPhase + offset);
-    return pow(max(0.0, c), width) * opacity;
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
   }
 
   void main() {
-    vec2 worldPos = (vUv - 0.5) * uPlaneSize;
-    float r = length(worldPos);
-    if (r < 0.8 || r > 14.5) discard;
-    // Plane is rotated [-PI/2, 0, 0] — negate Y to recover true particle angle.
-    float theta = atan(-worldPos.y, worldPos.x);
+    vec2 p = vUv - 0.5;
+    float d = length(p) * 2.0;
+    if (d > 1.0) discard;
 
-    float t = uTightness * 4.0 + 0.5;
-    float armPhase = (theta - r * t) * uArms;
+    // Soft blue halo
+    float halo = pow(1.0 - d, 2.5) * 0.55;
+    // Brighter core
+    float core = pow(1.0 - d, 6.0) * 0.85;
 
-    // ---- MULTIPLE PARALLEL SUB-LANES per arm ----
-    // Real galaxies have a dominant dust lane on the leading edge plus
-    // secondary tendrils. We sum 4 bands at different offsets/widths.
-    float dust = 0.0;
-    dust += armBand(armPhase,  0.55, 18.0, 1.00); // primary leading lane (sharp)
-    dust += armBand(armPhase,  0.30,  8.0, 0.45); // soft inner shoulder
-    dust += armBand(armPhase,  0.85, 30.0, 0.55); // thin trailing wisp
-    dust += armBand(armPhase, -1.20, 24.0, 0.35); // far trailing fragment
+    // Sparse pinpoint stars scattered inside cluster
+    vec2 g = floor(vUv * 14.0 + uSeed);
+    float starProb = hash(g);
+    float stars = 0.0;
+    if (starProb > 0.78) {
+      vec2 cell = fract(vUv * 14.0 + uSeed) - 0.5;
+      float sd = length(cell);
+      stars = smoothstep(0.18, 0.0, sd) * 0.9 * (1.0 - d);
+    }
 
-    // ---- FRACTAL BREAKUP — turns smooth bands into a filamentary network ----
-    // Sample fBm in arm-following coordinates so the noise drifts WITH the arm,
-    // not perpendicular to it (which would just create blobs).
-    vec2 armCoord = vec2(armPhase * 0.35, log(r + 0.5) * 1.8);
-    float bigClumps = fbm(armCoord * 1.2);              // 0..1 large clumps
-    float smallDetail = fbm(armCoord * 4.5 + 13.7);     // 0..1 fine grain
-    float clumpiness = bigClumps * 0.7 + smallDetail * 0.3;
+    float a = clamp(halo + core + stars, 0.0, 1.0);
+    if (a < 0.02) discard;
 
-    // Apply clumpiness as a multiplier with deep gaps:
-    // 0.45 minimum keeps lanes connected, 1.55 peak makes some sections darker.
-    dust *= 0.45 + clumpiness * 1.10;
-
-    // Carve OUT bright gaps where noise is very low (real dust has holes
-    // where blue star clusters punch through).
-    float gaps = smoothstep(0.18, 0.05, smallDetail);
-    dust *= 1.0 - gaps * 0.7;
-
-    // ---- BRANCHING TENDRILS — perpendicular noise warps band edges ----
-    // Add a small angular wobble so straight arms get wavy edges.
-    float wobble = (fbm(vec2(r * 0.8, theta * 4.0)) - 0.5) * 0.25;
-    float wobbledPhase = armPhase + wobble * uArms;
-    dust += armBand(wobbledPhase, 0.55, 22.0, 0.6) * (0.5 + 0.5 * smallDetail);
-
-    // ---- RADIAL FADE — clean core, fade past disk edge ----
-    float radialFade = smoothstep(1.2, 3.0, r) * (1.0 - smoothstep(10.0, 14.5, r));
-    dust *= radialFade;
-
-    // ---- OUTPUT ----
-    if (dust < 0.025) discard;
-    // Real cosmic dust is reddish-brown (silicate + carbon grains absorb blue
-    // light preferentially, leaving warm tones). Dense clumps are deep brown,
-    // thinner edges glow slightly warmer where back-scattered starlight bleeds
-    // through. Modulating color by clumpiness gives organic variation.
-    vec3 dustDense = vec3(0.025, 0.015, 0.008);  // deep brown, opaque core
-    vec3 dustEdge  = vec3(0.18,  0.10,  0.05);   // warm amber, thin edges
-    vec3 dustColor = mix(dustEdge, dustDense, clumpiness);
-    // Cap alpha at 0.78 so the densest dust still lets a hint of background
-    // through — pure black blocks look painted, real dust is semi-translucent.
-    gl_FragColor = vec4(dustColor, clamp(dust * 0.85, 0.0, 0.78));
+    // Stars slightly whiter than halo
+    vec3 starTint = mix(uColor, vec3(1.0, 1.0, 1.05), 0.6);
+    vec3 finalColor = mix(uColor, starTint, smoothstep(0.0, 0.4, stars));
+    gl_FragColor = vec4(finalColor, a);
   }
 `;
 
-function DustLanes({
-  arms,
-  tightness,
-  rotationSpeed,
-}: {
-  arms: number;
-  tightness: number;
-  rotationSpeed: number;
-}) {
-  const groupRef = useRef<THREE.Group>(null);
-  useFrame((_, delta) => {
-    if (groupRef.current) groupRef.current.rotation.z += delta * rotationSpeed * 0.1;
-  });
-  const planeSize = 32;
+function OpenClusters({ arms, tightness }: { arms: number; tightness: number }) {
+  const clusters = useMemo(() => {
+    const list: Array<{ pos: [number, number, number]; size: number; seed: number; tint: [number, number, number] }> = [];
+    let s = 4242;
+    const rng = () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280;
+    };
+    const t = tightness * 4 + 0.5;
+    const N = 60;
+    for (let i = 0; i < N; i++) {
+      // Distribute across all arms, biased toward mid-disk where star
+      // formation peaks (open clusters die out beyond ~1 Gyr).
+      const armIndex = i % arms;
+      const angleOffset = (armIndex / arms) * Math.PI * 2;
+      const r = 2.5 + rng() * 9.0;                   // 2.5..11.5
+      const angle = -(r * t + angleOffset) + (rng() - 0.5) * 0.4;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      const y = (rng() - 0.5) * 0.35;                // thin disk plane
+      const size = 0.55 + rng() * 0.65;              // small clusters
+      // Color varies young-blue to slightly white (different ages)
+      const blueness = 0.55 + rng() * 0.45;
+      list.push({
+        pos: [x, y, z],
+        size,
+        seed: rng() * 100,
+        tint: [0.55 + rng() * 0.2, 0.7 + rng() * 0.15, 1.0 * blueness + 0.05],
+      });
+    }
+    return list;
+  }, [arms, tightness]);
+
   return (
-    <group ref={groupRef} rotation={[-Math.PI / 2, 0, 0]}>
-      <mesh renderOrder={3}>
-        <planeGeometry args={[planeSize, planeSize]} />
-        <shaderMaterial
-          vertexShader={dustVertex}
-          fragmentShader={dustFragment}
-          uniforms={{
-            uArms: { value: arms },
-            uTightness: { value: tightness },
-            uPlaneSize: { value: planeSize },
-          }}
-          transparent
-          depthWrite={false}
-          blending={THREE.NormalBlending}
-        />
-      </mesh>
+    <group rotation={[-Math.PI / 2, 0, 0]}>
+      {clusters.map((c, i) => (
+        <mesh key={i} position={c.pos as [number, number, number]} renderOrder={4}>
+          <planeGeometry args={[c.size, c.size]} />
+          <shaderMaterial
+            vertexShader={billboardVertex}
+            fragmentShader={openClusterFragment}
+            uniforms={{
+              uColor: { value: new THREE.Color(c.tint[0], c.tint[1], c.tint[2]) },
+              uSeed: { value: c.seed },
+            }}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      ))}
     </group>
   );
 }
+
+/* ---------- (DustLanes removed) ---------- */
+
+
 
 /* ---------- DISTANT GALAXIES — faint smudges in deep space ---------- */
 
@@ -826,13 +787,9 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapsho
               <HIIRegions arms={settings.arms} tightness={settings.tightness} />
             </group>
           )}
-          {settings.dustLanes && (
+          {settings.openClusters && (
             <group rotation={[settings.tilt, 0, 0]}>
-              <DustLanes
-                arms={settings.arms}
-                tightness={settings.tightness}
-                rotationSpeed={settings.rotationSpeed}
-              />
+              <OpenClusters arms={settings.arms} tightness={settings.tightness} />
             </group>
           )}
           {settings.blackHole && (

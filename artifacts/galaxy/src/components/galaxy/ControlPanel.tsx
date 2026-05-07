@@ -25,7 +25,7 @@ import {
   Gauge,
   Tag,
   Wind,
-  Cloudy,
+  Sparkle,
   Stars,
   Download,
   Globe,
@@ -115,14 +115,18 @@ function ToggleRow({
   inactiveText = "Off",
 }: ToggleRowProps) {
   return (
-    <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
-      <span className="text-sm text-white/70 font-medium tracking-tight flex items-center gap-2 min-w-0">
+    <div
+      className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/5 border border-white/5"
+      title={label}
+    >
+      <span className="text-[13px] text-white/70 font-medium tracking-tight flex items-center gap-2 min-w-0 flex-1">
         <span className="shrink-0 text-white/50">{icon}</span>
         <span className="truncate">{label}</span>
       </span>
       <button
         onClick={onToggle}
-        className={`shrink-0 px-3 py-1.5 rounded-md text-[10px] uppercase tracking-wider transition-all font-black shadow-lg ${
+        title={`${label} — ${active ? activeText : inactiveText}`}
+        className={`shrink-0 px-2.5 py-1 rounded-md text-[10px] uppercase tracking-wider transition-all font-black shadow-lg ${
           active ? `${activeColor} text-white` : "bg-white/10 text-white/60 hover:bg-white/20"
         }`}
       >
@@ -204,7 +208,7 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
     settings.bloom,
     settings.softParticles,
     settings.particles3D,
-    settings.dustLanes,
+    settings.openClusters,
     settings.blackHole,
     settings.nebulaBackground,
     settings.distantGalaxies,
@@ -383,15 +387,15 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
 
       <Section
         title="Disk Features"
-        badge={[settings.dustLanes, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length || undefined ? `${[settings.dustLanes, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length} on` : undefined}
+        badge={[settings.openClusters, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length || undefined ? `${[settings.openClusters, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length} on` : undefined}
         defaultOpen={false}
       >
         <ToggleRow
-          icon={<Cloudy className="w-3.5 h-3.5" />}
-          label="Dust Lanes"
-          active={settings.dustLanes}
-          onToggle={() => update("dustLanes", !settings.dustLanes)}
-          activeColor="bg-stone-600 hover:bg-stone-500"
+          icon={<Sparkle className="w-3.5 h-3.5" />}
+          label="Open Clusters"
+          active={settings.openClusters}
+          onToggle={() => update("openClusters", !settings.openClusters)}
+          activeColor="bg-sky-500 hover:bg-sky-400"
         />
         <ToggleRow
           icon={<Flame className="w-3.5 h-3.5" />}
@@ -589,10 +593,10 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
     <div className="fixed top-0 left-0 h-full z-50 flex items-stretch pointer-events-none">
       <div
         className={`pointer-events-auto transition-all duration-300 ease-in-out overflow-hidden ${
-          open ? "w-80" : "w-0"
+          open ? "w-[22rem]" : "w-0"
         }`}
       >
-        <div className="h-full w-80 bg-black/40 backdrop-blur-xl border-r border-white/10">
+        <div className="h-full w-[22rem] bg-black/40 backdrop-blur-xl border-r border-white/10">
           {panelContent}
         </div>
       </div>

@@ -71,7 +71,7 @@ export interface GalaxySettings {
   adaptiveQuality: boolean;
   regionLabels: boolean;
   softParticles: boolean;
-  dustLanes: boolean;
+  openClusters: boolean;
   distantGalaxies: boolean;
   distantGalaxyCount: number;
   particles3D: boolean;
@@ -104,7 +104,7 @@ export const DEFAULT_SETTINGS: GalaxySettings = {
   adaptiveQuality: true,
   regionLabels: false,
   softParticles: false,
-  dustLanes: false,
+  openClusters: false,
   distantGalaxies: false,
   distantGalaxyCount: 32,
   particles3D: false,
