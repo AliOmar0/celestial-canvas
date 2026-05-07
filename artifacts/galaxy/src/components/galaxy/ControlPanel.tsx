@@ -60,19 +60,43 @@ function useIsMobile() {
 }
 
 /* ---------- Collapsible Section ---------- */
+// Supports BOTH uncontrolled (independent open/close) and controlled
+// (accordion group via openId/setOpenId/sectionId — only one open at a
+// time within a group) modes. Used to declutter the optional sections.
 interface SectionProps {
   title: string;
   defaultOpen?: boolean;
   badge?: string;
   children: ReactNode;
+  // Accordion group support
+  sectionId?: string;
+  openId?: string | null;
+  setOpenId?: (id: string | null) => void;
 }
-function Section({ title, defaultOpen = true, badge, children }: SectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+function Section({
+  title,
+  defaultOpen = true,
+  badge,
+  children,
+  sectionId,
+  openId,
+  setOpenId,
+}: SectionProps) {
+  const isControlled = sectionId !== undefined && setOpenId !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const open = isControlled ? openId === sectionId : uncontrolledOpen;
+  const toggle = () => {
+    if (isControlled) {
+      setOpenId!(open ? null : sectionId!);
+    } else {
+      setUncontrolledOpen(!uncontrolledOpen);
+    }
+  };
   return (
     <section className="border border-white/5 rounded-lg overflow-hidden bg-white/[0.02]">
       <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors"
+        onClick={toggle}
+        className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-white/5 transition-colors"
       >
         <div className="flex items-center gap-2">
           <h3 className="text-[11px] uppercase tracking-widest text-white/55 font-semibold">
@@ -90,7 +114,7 @@ function Section({ title, defaultOpen = true, badge, children }: SectionProps) {
           <ChevronDown className="w-3.5 h-3.5 text-white/40" />
         )}
       </button>
-      {open && <div className="px-3 pb-3 pt-1 space-y-3">{children}</div>}
+      {open && <div className="px-2 pb-2 pt-1 space-y-2">{children}</div>}
     </section>
   );
 }
@@ -120,10 +144,10 @@ function ToggleRow({
       title={`${label} — ${active ? activeText : inactiveText}`}
       role="switch"
       aria-checked={active}
-      className="w-full flex items-center justify-between gap-3 p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-colors text-left"
+      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-colors text-left"
     >
-      <span className="text-[13px] text-white/80 font-medium tracking-tight flex items-start gap-2 min-w-0 flex-1 leading-snug">
-        <span className="shrink-0 text-white/50 pt-[2px]">{icon}</span>
+      <span className="text-[12.5px] text-white/80 font-medium tracking-tight flex items-start gap-2 min-w-0 flex-1 leading-snug">
+        <span className="shrink-0 text-white/50 pt-[1px]">{icon}</span>
         <span className="break-words">{label}</span>
       </span>
       <span
@@ -182,6 +206,9 @@ function LiveSlider({
 export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(!isMobile);
+  // Accordion state — only one optional section open at a time so the
+  // panel never becomes a wall of toggles.
+  const [openOpt, setOpenOpt] = useState<string | null>(null);
 
   useEffect(() => {
     setOpen(!isMobile);
@@ -227,7 +254,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
   ].filter(Boolean).length;
 
   const panelContent = (
-    <div className="flex flex-col gap-3 p-4 overflow-y-auto h-full">
+    <div
+      className="flex-1 min-h-0 flex flex-col gap-2 p-3 overflow-y-auto galaxy-scroll"
+    >
       <div className="flex items-center gap-2 px-1">
         <Settings className="w-5 h-5 text-white/70" />
         <h2 className="text-white font-semibold text-lg tracking-tight">
@@ -366,6 +395,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         title="Galactic Structure"
         badge={[settings.barStructure, settings.armAsymmetry, settings.stellarPopulations].filter(Boolean).length || undefined ? `${[settings.barStructure, settings.armAsymmetry, settings.stellarPopulations].filter(Boolean).length} on` : undefined}
         defaultOpen={false}
+        sectionId="galactic"
+        openId={openOpt}
+        setOpenId={setOpenOpt}
       >
         <ToggleRow
           icon={<Minus className="w-3.5 h-3.5" />}
@@ -394,6 +426,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         title="Disk Features"
         badge={[settings.openClusters, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length || undefined ? `${[settings.openClusters, settings.hiiRegions, settings.particles3D, settings.softParticles].filter(Boolean).length} on` : undefined}
         defaultOpen={false}
+        sectionId="disk"
+        openId={openOpt}
+        setOpenId={setOpenOpt}
       >
         <ToggleRow
           icon={<Sparkle className="w-3.5 h-3.5" />}
@@ -429,6 +464,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         title="Halo & Companions"
         badge={[settings.globularClusters, settings.blackHole, settings.companionGalaxy].filter(Boolean).length || undefined ? `${[settings.globularClusters, settings.blackHole, settings.companionGalaxy].filter(Boolean).length} on` : undefined}
         defaultOpen={false}
+        sectionId="halo"
+        openId={openOpt}
+        setOpenId={setOpenOpt}
       >
         <ToggleRow
           icon={<Orbit className="w-3.5 h-3.5" />}
@@ -457,6 +495,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         title="Deep Space"
         badge={[settings.nebulaBackground, settings.distantGalaxies, settings.regionLabels].filter(Boolean).length || undefined ? `${[settings.nebulaBackground, settings.distantGalaxies, settings.regionLabels].filter(Boolean).length} on` : undefined}
         defaultOpen={false}
+        sectionId="deep"
+        openId={openOpt}
+        setOpenId={setOpenOpt}
       >
         <ToggleRow
           icon={<Mountain className="w-3.5 h-3.5" />}
@@ -497,6 +538,9 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         title="Atmosphere"
         badge={settings.bloom ? "1 on" : undefined}
         defaultOpen={false}
+        sectionId="atmosphere"
+        openId={openOpt}
+        setOpenId={setOpenOpt}
       >
         <ToggleRow
           icon={<Sparkles className="w-3.5 h-3.5" />}
@@ -507,7 +551,13 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         />
       </Section>
 
-      <Section title="Camera & Audio" defaultOpen={false}>
+      <Section
+        title="Camera & Audio"
+        defaultOpen={false}
+        sectionId="camera"
+        openId={openOpt}
+        setOpenId={setOpenOpt}
+      >
         <ToggleRow
           icon={<Camera className="w-3.5 h-3.5" />}
           label="Fly-Through Tour"
@@ -530,7 +580,13 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
         />
       </Section>
 
-      <Section title="Engine" defaultOpen={false}>
+      <Section
+        title="Engine"
+        defaultOpen={false}
+        sectionId="engine"
+        openId={openOpt}
+        setOpenId={setOpenOpt}
+      >
         <ToggleRow
           icon={<Gauge className="w-3.5 h-3.5" />}
           label="Adaptive Quality"
@@ -583,8 +639,8 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
             </span>
           </button>
           <div
-            className={`overflow-hidden transition-all duration-300 ${
-              open ? "max-h-[60vh]" : "max-h-0"
+            className={`flex flex-col overflow-hidden transition-[max-height] duration-300 ${
+              open ? "max-h-[65vh]" : "max-h-0"
             }`}
           >
             {panelContent}
@@ -595,13 +651,13 @@ export function ControlPanel({ settings, onChange, onSnapshot }: Props) {
   }
 
   return (
-    <div className="fixed top-0 left-0 h-full z-50 flex items-stretch pointer-events-none">
+    <div className="fixed top-0 left-0 h-screen z-50 flex items-stretch pointer-events-none">
       <div
-        className={`pointer-events-auto transition-all duration-300 ease-in-out overflow-hidden ${
+        className={`pointer-events-auto h-full transition-[width] duration-300 ease-in-out overflow-hidden ${
           open ? "w-[22rem]" : "w-0"
         }`}
       >
-        <div className="h-full w-[22rem] bg-black/40 backdrop-blur-xl border-r border-white/10">
+        <div className="h-full w-[22rem] bg-black/40 backdrop-blur-xl border-r border-white/10 flex flex-col overflow-hidden">
           {panelContent}
         </div>
       </div>

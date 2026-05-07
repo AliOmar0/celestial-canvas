@@ -100,3 +100,22 @@
     font-family: 'Outfit', sans-serif;
   }
 }
+
+/* Galaxy control panel — visible custom scrollbar */
+.galaxy-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+.galaxy-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.galaxy-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.galaxy-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+.galaxy-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
+}
