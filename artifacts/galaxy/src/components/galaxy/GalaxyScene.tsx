@@ -149,37 +149,50 @@ function BlackHole({ themeKey }: { themeKey: string }) {
 
 const dustVertex = billboardVertex;
 
-// Matches GalaxyParticles spiral: spiralAngle = r * (tightness*4 + 0.5)
-// Dust lanes appear as dark filaments riding along the leading edge of each arm.
+// Matches GalaxyParticles spiral: spiralAngle = r * (tightness*4 + 0.5).
+// Outputs OPAQUE BLACK with alpha — drawn over particles using NormalBlending
+// so dust appears as visible dark filaments regardless of what's underneath.
 const dustFragment = `
   varying vec2 vUv;
   uniform float uArms;
   uniform float uTightness;
   uniform float uPlaneSize;
 
+  // 2D hash for cheap per-pixel jitter so the bands don't look perfectly clean
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
   void main() {
     vec2 worldPos = (vUv - 0.5) * uPlaneSize;
     float r = length(worldPos);
-    if (r < 0.8 || r > 14.5) { gl_FragColor = vec4(1.0); return; }
-    // NOTE: plane is rotated [-PI/2, 0, 0] to lay flat in XZ, which makes
-    // local +Y point at world -Z. So we negate Y to recover the *real* particle
-    // angle and align dust bands with the actual spiral arms.
+    if (r < 0.8 || r > 14.5) discard;
+    // Plane is rotated [-PI/2, 0, 0] to lie flat in XZ, so local +Y maps to
+    // world -Z. Negating Y recovers the true particle angle.
     float theta = atan(-worldPos.y, worldPos.x);
 
     float t = uTightness * 4.0 + 0.5;
-    // Phase = 0 along the arm spine; offset puts dust on the inner/leading edge.
     float armPhase = (theta - r * t) * uArms;
-    // Dark band: a sharp dust filament riding the inner edge of each arm
-    float band = pow(max(0.0, cos(armPhase + 0.45)), 6.0);
+
+    // Sharp dark filament riding the leading edge of each arm.
+    // Use a narrow Gaussian-like band: cos shifted, raised to high power.
+    float c1 = cos(armPhase + 0.55);
+    float band = pow(max(0.0, c1), 14.0);
     // Faint secondary band on the trailing side
-    float band2 = pow(max(0.0, cos(armPhase - 1.3)), 14.0) * 0.35;
+    float c2 = cos(armPhase - 1.4);
+    float band2 = pow(max(0.0, c2), 22.0) * 0.4;
     float dust = band + band2;
 
-    // Radial fade — keep the core clean and fade past the disk edge
-    float radialFade = smoothstep(0.8, 2.2, r) * (1.0 - smoothstep(11.0, 14.5, r));
-    dust *= radialFade * 0.8; // up to 80% darkening
-    vec3 col = vec3(1.0 - dust);
-    gl_FragColor = vec4(col, 1.0);
+    // Per-pixel jitter so bands look organic, not painted
+    dust *= 0.78 + 0.22 * hash(floor(worldPos * 2.5));
+
+    // Radial fade — clean core, fade out past disk edge
+    float radialFade = smoothstep(1.0, 2.6, r) * (1.0 - smoothstep(10.5, 14.5, r));
+    dust *= radialFade;
+
+    if (dust < 0.02) discard;
+    // Output: pure black with alpha proportional to dust intensity (max ~0.9)
+    gl_FragColor = vec4(0.0, 0.0, 0.0, clamp(dust, 0.0, 0.9));
   }
 `;
 
@@ -194,13 +207,12 @@ function DustLanes({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   useFrame((_, delta) => {
-    // Rotate around disk normal so lanes track with the spinning particles
     if (groupRef.current) groupRef.current.rotation.z += delta * rotationSpeed * 0.1;
   });
   const planeSize = 32;
   return (
     <group ref={groupRef} rotation={[-Math.PI / 2, 0, 0]}>
-      <mesh renderOrder={2}>
+      <mesh renderOrder={3}>
         <planeGeometry args={[planeSize, planeSize]} />
         <shaderMaterial
           vertexShader={dustVertex}
@@ -212,7 +224,7 @@ function DustLanes({
           }}
           transparent
           depthWrite={false}
-          blending={THREE.MultiplyBlending}
+          blending={THREE.NormalBlending}
         />
       </mesh>
     </group>

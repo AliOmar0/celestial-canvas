@@ -56,28 +56,23 @@ const fragmentShader = `
     float alphaMask = smoothstep(0.5, falloffStart, dist);
     if (alphaMask < 0.001) discard;
 
-    // 3D Particles: fake a lit-sphere shading from a fixed light direction
-    // plus a high-contrast specular hot-spot. With additive blending the
-    // result is bright lit-side highlights with darker shaded backsides,
-    // giving each particle real volumetric presence.
+    // 3D Particles: fake a lit-sphere shading from a fixed light direction.
+    // Shade is normalized so peak brightness == 1.0 (no overall brightening),
+    // but the lit pole stays full-intensity while the shaded side dims to ~5%.
+    // Total energy is preserved — particles just look volumetric, not glowing.
     if (uParticle3D > 0.5) {
       vec2 n = (gl_PointCoord - 0.5) * 2.0;
       float r2 = dot(n, n);
-      if (r2 < 1.0) {
+      if (r2 <= 1.0) {
         float z = sqrt(1.0 - r2);
         vec3 normal = vec3(n.x, -n.y, z);
-        vec3 light = normalize(vec3(-0.6, 0.6, 0.65));
+        vec3 light = normalize(vec3(-0.55, 0.55, 0.7));
         float ndl = max(0.0, dot(normal, light));
-        // Diffuse term with a low ambient floor so shaded sides go nearly dark
-        float diffuse = 0.08 + 1.4 * pow(ndl, 1.1);
-        // Specular hot-spot near the lit pole — punches up the highlight
-        vec3 viewDir = vec3(0.0, 0.0, 1.0);
-        vec3 halfDir = normalize(light + viewDir);
-        float spec = pow(max(0.0, dot(normal, halfDir)), 16.0) * 0.9;
-        float shade = diffuse + spec;
-        // Tighten alpha mask too so each sprite reads as a discrete sphere
-        alphaMask = pow(alphaMask, 1.4);
+        // Pure diffuse falloff — peaks at 1.0, never above
+        float shade = 0.05 + 0.95 * ndl;
         finalBrightness *= shade;
+      } else {
+        finalBrightness = 0.0;
       }
     }
 
