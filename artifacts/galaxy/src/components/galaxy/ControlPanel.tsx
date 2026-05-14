@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Slider } from "@/components/ui/slider";
 import {
   COLOR_THEMES,
@@ -100,10 +101,10 @@ function ToggleRow({
           active ? activeColor : "bg-white/15"
         }`}
       >
-        <span
-          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-transform ${
-            active ? "translate-x-4" : "translate-x-0"
-          }`}
+        <motion.span
+          className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-md"
+          animate={{ x: active ? 16 : 0 }}
+          transition={{ type: "spring", stiffness: 520, damping: 32 }}
         />
       </span>
     </button>
@@ -636,7 +637,17 @@ export function ControlPanel({ settings, onChange, onSnapshot, onShare }: Props)
 
       {/* Tab content (scrollable) */}
       <div className="flex-1 min-h-0 overflow-y-auto galaxy-scroll px-2.5 py-3">
-        {tabContent()}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {tabContent()}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* Footer (fixed) */}

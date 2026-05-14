@@ -1,5 +1,13 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Billboard } from "@react-three/drei";
+import {
+  EffectComposer,
+  Bloom,
+  Vignette,
+  ChromaticAberration,
+} from "@react-three/postprocessing";
+import { BlendFunction, KernelSize } from "postprocessing";
+import { Vector2 } from "three";
 import { GalaxyParticles } from "./GalaxyParticles";
 import { Starfield } from "./Starfield";
 import { Galaxy2D } from "./Galaxy2D";
@@ -692,18 +700,21 @@ function AdaptiveQuality({ enabled, currentCount, onChange }: AdaptiveProps) {
 /* ---------- SNAPSHOT BRIDGE ---------- */
 
 function SnapshotBridge({ register }: { register: (fn: () => string | null) => void }) {
-  const { gl, scene, camera } = useThree();
+  const { gl } = useThree();
   useEffect(() => {
     register(() => {
       try {
-        gl.render(scene, camera);
+        // EffectComposer drives the actual frame render; preserveDrawingBuffer
+        // keeps the composed (post-processed) result available on the canvas,
+        // so we grab it directly rather than re-rendering and bypassing the
+        // composer.
         return gl.domElement.toDataURL("image/png");
       } catch {
         return null;
       }
     });
     return () => register(() => null);
-  }, [gl, scene, camera, register]);
+  }, [gl, register]);
   return null;
 }
 
@@ -717,6 +728,7 @@ interface Props {
 
 export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapshot }: Props) {
   const [isWebGLAvailable, setIsWebGLAvailable] = useState<boolean | null>(null);
+  const chromaticOffset = useMemo(() => new Vector2(0.0006, 0.0009), []);
 
   useEffect(() => {
     const checkWebGL = () => {
@@ -820,6 +832,27 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapsho
               dampingFactor={0.05}
             />
           )}
+          <EffectComposer multisampling={0} enableNormalPass={false}>
+            {settings.bloom ? (
+              <Bloom
+                intensity={1.15}
+                luminanceThreshold={0.18}
+                luminanceSmoothing={0.85}
+                mipmapBlur
+                kernelSize={KernelSize.LARGE}
+                radius={0.82}
+              />
+            ) : (
+              <></>
+            )}
+            <ChromaticAberration
+              blendFunction={BlendFunction.NORMAL}
+              offset={chromaticOffset}
+              radialModulation={false}
+              modulationOffset={0}
+            />
+            <Vignette eskil={false} offset={0.18} darkness={0.78} />
+          </EffectComposer>
         </Canvas>
         {settings.showFPS && <FPSCounter />}
       </div>
