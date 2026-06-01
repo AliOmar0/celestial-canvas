@@ -1,7 +1,7 @@
 import { useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { COLOR_THEMES, type GalaxySettings } from "./types";
+import { COLOR_THEMES, type GalaxySettings, type GalaxyMorphology } from "./types";
 
 const vertexShader = `
   attribute float aSize;
@@ -103,20 +103,66 @@ const fragmentShader = `
   }
 `;
 
+// ---- DUST LANE LAYER (multiply blending = genuine dark absorption) ----
+// Additive blending physically cannot darken what is behind it, so it can never
+// produce a dark dust lane. This separate layer uses MultiplyBlending: each
+// sprite multiplies the bright galaxy behind it toward a dark brown at its
+// center and toward white (no change) at its edges — exactly how a real dust
+// lane absorbs starlight.
+const dustVertexShader = `
+  attribute float aSize;
+  uniform float uPixelRatio;
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = aSize * uPixelRatio * (330.0 / -mvPosition.z);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const dustFragmentShader = `
+  uniform vec3 uDustColor;
+  uniform float uStrength;
+  void main() {
+    float dist = length(gl_PointCoord - 0.5);
+    float mask = smoothstep(0.5, 0.0, dist); // 1 at center -> 0 at edge
+    // White where faint (multiply by 1 = no change), dark brown at the core.
+    vec3 col = mix(vec3(1.0), uDustColor, mask * uStrength);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
 interface Props {
   settings: GalaxySettings;
 }
 
+// Cheap approximate normal distribution in [-1, 1] (sum of 3 uniforms).
+function gaussian(): number {
+  return (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+}
+
+function hasDustLane(m: GalaxyMorphology): boolean {
+  return m === "edgeOn" || m === "dustLane";
+}
+
 export function GalaxyParticles({ settings }: Props) {
   const pointsRef = useRef<THREE.Points>(null);
+  const dustRef = useRef<THREE.Points>(null);
+  const spinRef = useRef<THREE.Group>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
+
+  const morphology = settings.morphology;
 
   const { positions, colors, sizes, brightnesses, types } = useMemo(() => {
     // Capping at 150k for better stability across all hardware
-    const count = Math.min(settings.particleCount, 150000);
+    const count = Math.max(1, Math.min(settings.particleCount, 150000));
     const theme = COLOR_THEMES[settings.theme] || COLOR_THEMES.andromeda;
-    const arms = settings.arms;
+    const arms = Math.max(1, Math.floor(settings.arms));
     const tightness = settings.tightness * 4 + 0.5;
+
+    const isEdgeOn = morphology === "edgeOn";
+    const isStarburst = morphology === "starburst";
+    const isFlocculent = morphology === "flocculent";
+    const isGrand = morphology === "grandDesign";
 
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
@@ -124,108 +170,201 @@ export function GalaxyParticles({ settings }: Props) {
     const bri = new Float32Array(count);
     const typ = new Float32Array(count);
 
-    // Pre-calculate common factors for performance
     const radialLimit = 15;
     const invRadialLimit = 1 / radialLimit;
 
     // ---- ARM ASYMMETRY: per-arm radial scale + density weight ----
-    // Real galaxies aren't perfectly symmetric — one arm often dominates.
-    // Deterministic per-arm values so toggling doesn't reroll randomly.
     const armScales: number[] = [];
     const armWeights: number[] = [];
     if (settings.armAsymmetry) {
-      // Seeded LCG so it's stable across renders
       let s = 1234 + arms * 17;
       const rng = () => {
         s = (s * 9301 + 49297) % 233280;
         return s / 233280;
       };
       for (let a = 0; a < arms; a++) {
-        armScales.push(0.65 + rng() * 0.55);   // 0.65–1.20 length variation
-        armWeights.push(0.55 + rng() * 0.85);  // 0.55–1.40 brightness variation
+        armScales.push(0.65 + rng() * 0.55);
+        armWeights.push(0.55 + rng() * 0.85);
+      }
+    }
+
+    // ---- FLOCCULENT SPURS: many short, scattered arc fragments ----
+    // Real flocculent galaxies (M63, M101, M33) have no clean grand arms — just
+    // dozens of patchy, feathery spurs. We pre-seed a fixed bank of spurs so the
+    // shape is stable across re-renders.
+    const SPUR_COUNT = 24 + arms * 5;
+    const spurR: number[] = [];
+    const spurA: number[] = [];
+    const spurLen: number[] = [];
+    const spurWidth: number[] = [];
+    if (isFlocculent) {
+      let fs = 7777 + arms * 31;
+      const frng = () => {
+        fs = (fs * 9301 + 49297) % 233280;
+        return fs / 233280;
+      };
+      for (let k = 0; k < SPUR_COUNT; k++) {
+        spurR.push(1.5 + frng() * (radialLimit - 2.0));
+        spurA.push(frng() * Math.PI * 2);
+        spurLen.push(0.25 + frng() * 0.8);
+        spurWidth.push(0.4 + frng() * 0.9);
       }
     }
 
     // ---- STELLAR POPULATIONS: warm bulge → cool arms tint ----
-    // Pop II (old) stars in the bulge are red/yellow; Pop I (young) stars
-    // in the arms are hot blue. Mixing these tints with the theme color
-    // creates the realistic radial color gradient seen in Hubble images.
-    const popI = [0.55, 0.7, 1.15];   // blue tint for young arm stars
-    const popII = [1.15, 0.95, 0.7];  // warm yellow tint for old bulge stars
+    const popI = [0.55, 0.7, 1.15];
+    const popII = [1.15, 0.95, 0.7];
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
-      
+
+      // ---- Particle composition (star / gas / dust) is morphology-aware ----
+      let gasCut = 0.88;
+      let dustCut = 0.12;
+      if (isStarburst) gasCut = 0.74; // lots of glowing gas
+      if (isEdgeOn) dustCut = 0.04; // dark lane handled by the multiply layer
+
       const randType = Math.random();
-      let pType = 0.0; 
-      if (randType > 0.88) pType = 1.0; // Gas
-      else if (randType < 0.12) pType = 2.0; // Dust
-      typ[i] = pType;
+      let pType = 0.0;
+      if (randType > gasCut) pType = 1.0;
+      else if (randType < dustCut) pType = 2.0;
 
-      const armIndex = i % arms;
-      const angleOffset = (armIndex / arms) * Math.PI * 2;
+      let px = 0;
+      let py = 0;
+      let pz = 0;
+      let finalR = 0;
+      let isCoreBulge = false;
+      let armWeight = 1.0;
+      let isOutflow = false;
 
-      // Asymmetry: per-arm radial scale (1.0 if disabled)
-      const armScale = settings.armAsymmetry ? armScales[armIndex] : 1.0;
+      if (isStarburst) {
+        // ---- M82: an elongated cigar with bipolar gas plumes ----
+        if (pType === 1.0 && Math.random() < 0.55) {
+          // Hot hydrogen blown out perpendicular to the long (X) axis.
+          isOutflow = true;
+          const side = Math.random() < 0.5 ? 1 : -1;
+          const h = Math.pow(Math.random(), 0.7) * 7.0;
+          const spread = 0.5 + h * 0.22;
+          px = (Math.random() - 0.5) * spread * 1.6;
+          py = side * (0.8 + h);
+          pz = (Math.random() - 0.5) * spread;
+          finalR = Math.hypot(px, pz);
+        } else {
+          const along = (Math.random() * 2 - 1);
+          const longR = Math.sign(along) * Math.pow(Math.abs(along), 0.9) * 7.5;
+          const taper = 1.0 - Math.min(1, Math.abs(along)) * 0.6;
+          px = longR + (Math.random() - 0.5) * 0.6;
+          py = (Math.random() - 0.5) * 1.5 * taper;
+          pz = (Math.random() - 0.5) * 2.2 * taper;
+          finalR = Math.hypot(px, pz);
+          isCoreBulge = Math.abs(along) < 0.18;
+        }
+      } else if (isEdgeOn) {
+        // ---- M104: a big spherical bulge + a thin, wide disk ----
+        const inBulge = Math.random() < 0.5;
+        if (inBulge) {
+          const br = Math.pow(Math.random(), 0.55) * 3.4;
+          const u = Math.random() * Math.PI * 2;
+          const v = Math.acos(Math.random() * 2 - 1);
+          px = br * Math.sin(v) * Math.cos(u);
+          py = br * Math.cos(v) * 0.85;
+          pz = br * Math.sin(v) * Math.sin(u);
+          finalR = br;
+          isCoreBulge = true;
+        } else {
+          // Thin disk, ring-weighted toward the outer edge.
+          const rr = 2.5 + Math.pow(Math.random(), 0.8) * (radialLimit - 2.5);
+          const ang = Math.random() * Math.PI * 2;
+          px = Math.cos(ang) * rr;
+          pz = Math.sin(ang) * rr;
+          py = (Math.random() - 0.5) * 0.45;
+          finalR = rr;
+        }
+      } else if (isFlocculent) {
+        // ---- M63 / M101 / M33: patchy spur fragments + smooth disk floor ----
+        if (Math.random() < 0.7) {
+          const k = (Math.random() * SPUR_COUNT) | 0;
+          const da = (Math.random() - 0.5) * spurLen[k];
+          const rr = Math.max(0.5, spurR[k] + (Math.random() - 0.5) * spurWidth[k] + da * 2.0);
+          const ang = spurA[k] + da + rr * tightness * 0.18;
+          px = Math.cos(ang) * rr;
+          pz = Math.sin(ang) * rr;
+          py = (Math.random() - 0.5) * (0.28 + rr * 0.035);
+          finalR = rr;
+        } else {
+          const rr = Math.pow(Math.random(), 1.3) * radialLimit;
+          const ang = Math.random() * Math.PI * 2;
+          px = Math.cos(ang) * rr;
+          pz = Math.sin(ang) * rr;
+          py = (Math.random() - 0.5) * (0.28 + rr * 0.035);
+          finalR = rr;
+          isCoreBulge = Math.random() < 0.12 && rr < 2.0;
+        }
+      } else {
+        // ---- SPIRAL FAMILY: spiral / grandDesign / dustLane ----
+        const armIndex = i % arms;
+        const angleOffset = (armIndex / arms) * Math.PI * 2;
+        const armScale = settings.armAsymmetry ? armScales[armIndex] : 1.0;
+        armWeight = settings.armAsymmetry ? armWeights[armIndex] : 1.0;
 
-      const r = Math.pow(Math.random(), 1.4) * radialLimit * armScale;
-      const isCoreBulge = Math.random() < 0.15 && r < 2.5;
+        const r = Math.pow(Math.random(), 1.4) * radialLimit * armScale;
+        isCoreBulge = Math.random() < 0.15 && r < 2.5;
+        const spiralAngle = r * tightness + angleOffset;
 
-      const spiralAngle = r * tightness + angleOffset;
-      // Increased noise impact and added radial dispersion
-      const noiseAmp = (pType === 2.0 ? 2.5 : (pType === 1.0 ? 1.8 : 1.2)) * settings.dispersion;
-      const angle = isCoreBulge 
-        ? Math.random() * Math.PI * 2 
-        : spiralAngle + (Math.random() - 0.5) * noiseAmp / (Math.pow(r, 0.4) + 1.0);
+        // Grand-design arms are tight and high-contrast: most stars hug the arm
+        // centerline (small gaussian spread) with only a thin inter-arm floor.
+        const interArm = isGrand ? 0.16 : 0.4;
+        const armSigma = isGrand ? 0.32 : 1.0;
+        const noiseAmp =
+          (pType === 2.0 ? 2.5 : pType === 1.0 ? 1.8 : 1.2) * settings.dispersion * armSigma;
 
-      // Radial dispersion
-      const radialNoise = (Math.random() - 0.5) * settings.dispersion * 0.4;
-      const finalR = Math.max(0, r + (isCoreBulge ? 0 : radialNoise));
+        let angle: number;
+        if (isCoreBulge) {
+          angle = Math.random() * Math.PI * 2;
+        } else if (Math.random() < interArm) {
+          angle = Math.random() * Math.PI * 2; // smooth disk between arms
+        } else {
+          angle = spiralAngle + gaussian() * noiseAmp / (Math.pow(r, 0.4) + 1.0);
+        }
 
-      // ENHANCED 3D DEPTH: Variable vertical spread and disk warp
-      // Disk warp creates a subtle 'integral' shape
-      const diskWarp = Math.sin(finalR * 0.2) * 0.4;
-      const verticalSpread = isCoreBulge 
-        ? 1.2 // More spherical core
-        : (pType === 0.0 ? 0.35 + (finalR * 0.05) : 1.2) * settings.dispersion; // Dispersion also affects height
-      
-      const diskHeight = (Math.random() - 0.5) * verticalSpread * Math.exp(-finalR * (isCoreBulge ? 0.25 : 0.05)) + diskWarp;
+        const radialNoise = (Math.random() - 0.5) * settings.dispersion * 0.4;
+        finalR = Math.max(0, r + (isCoreBulge ? 0 : radialNoise));
 
-      let px = Math.cos(angle) * finalR;
-      const py = diskHeight;
-      let pz = Math.sin(angle) * finalR;
+        const diskWarp = Math.sin(finalR * 0.2) * 0.4;
+        const verticalSpread = isCoreBulge
+          ? 1.2
+          : (pType === 0.0 ? 0.35 + finalR * 0.05 : 1.2) * settings.dispersion;
+        py = (Math.random() - 0.5) * verticalSpread * Math.exp(-finalR * (isCoreBulge ? 0.25 : 0.05)) + diskWarp;
 
-      // ---- BAR STRUCTURE: stretch inner particles into an elongated bar ----
-      // Real barred spirals (NGC 1300, NGC 1365) have a flat dense bar in the
-      // center where stars on radial orbits pile up. We achieve this by
-      // remapping the inner ~3.5 unit region into an elongated ellipse along
-      // the X axis: stretch X by 1.8x, squash Z by 0.45x, with smooth falloff
-      // so it blends into the spiral arms.
-      if (settings.barStructure && finalR < 4.0) {
-        const barFalloff = 1.0 - Math.min(1.0, finalR / 4.0);
-        const barStrength = barFalloff * barFalloff; // 0..1, smooth
-        const stretchX = 1.0 + 0.85 * barStrength;
-        const squashZ = 1.0 - 0.55 * barStrength;
-        px *= stretchX;
-        pz *= squashZ;
+        px = Math.cos(angle) * finalR;
+        pz = Math.sin(angle) * finalR;
+
+        // ---- BAR STRUCTURE: stretch inner particles into an elongated bar ----
+        if (settings.barStructure && finalR < 4.0) {
+          const barFalloff = 1.0 - Math.min(1.0, finalR / 4.0);
+          const barStrength = barFalloff * barFalloff;
+          px *= 1.0 + 0.85 * barStrength;
+          pz *= 1.0 - 0.55 * barStrength;
+        }
       }
 
+      typ[i] = pType;
       pos[i3] = px;
       pos[i3 + 1] = py;
       pos[i3 + 2] = pz;
 
-      const radialFactor = 0.15 + Math.pow(r * invRadialLimit, 1.3) * 1.25;
+      const radialFactor = 0.15 + Math.pow(finalR * invRadialLimit, 1.3) * 1.25;
 
       let bRgb: [number, number, number];
-      if (r < 2.5 || isCoreBulge) {
-        const mixRatio = r / 2.5;
+      if (finalR < 2.5 || isCoreBulge) {
+        const mixRatio = Math.min(1, finalR / 2.5);
         bRgb = [
           theme.core[0] * (1 - mixRatio) + theme.mid[0] * mixRatio,
           theme.core[1] * (1 - mixRatio) + theme.mid[1] * mixRatio,
           theme.core[2] * (1 - mixRatio) + theme.mid[2] * mixRatio,
         ];
       } else {
-        const mixRatio = (r - 2.5) / 12.5;
+        const mixRatio = Math.min(1, (finalR - 2.5) / 12.5);
         if (pType === 1.0) bRgb = [0.95, 0.2, 0.6];
         else if (pType === 2.0) bRgb = [0.2, 0.15, 0.1];
         else {
@@ -237,14 +376,17 @@ export function GalaxyParticles({ settings }: Props) {
         }
       }
 
-      // Shading and Hue Variance
+      // Starburst gas (especially the bipolar plume) glows red H-alpha.
+      if (isStarburst && pType === 1.0) {
+        bRgb = isOutflow ? [1.0, 0.3, 0.2] : [1.0, 0.45, 0.3];
+      }
+
       const colorVariance = Math.random();
       let sFactor = radialFactor;
       if (pType === 2.0) sFactor *= 0.5;
 
       let wMix = 0.0;
-      let hShift = (Math.random() - 0.5) * 0.15;
-
+      const hShift = (Math.random() - 0.5) * 0.15;
       if (colorVariance > 0.9 && pType === 0.0) {
         wMix = Math.random() * 0.3 * radialFactor;
         sFactor *= 1.1;
@@ -254,16 +396,12 @@ export function GalaxyParticles({ settings }: Props) {
       let cG = bRgb[1] * sFactor + wMix - hShift * 0.1;
       let cB = bRgb[2] * sFactor + wMix + hShift * 0.3;
 
-      // ---- STELLAR POPULATIONS — radial Pop II (yellow bulge) → Pop I (blue arm) tint ----
-      // Only applied to STAR particles (gas/dust keep their natural colors).
+      // ---- STELLAR POPULATIONS — radial Pop II (yellow) → Pop I (blue) tint ----
       if (settings.stellarPopulations && pType === 0.0) {
-        // 0 at center → 1 at outer disk
         const popMix = Math.min(1.0, Math.max(0.0, (finalR - 1.0) / 11.0));
-        // Tint vector smoothly interpolates from warm yellow → cool blue
         const tintR = popII[0] * (1 - popMix) + popI[0] * popMix;
         const tintG = popII[1] * (1 - popMix) + popI[1] * popMix;
         const tintB = popII[2] * (1 - popMix) + popI[2] * popMix;
-        // Apply at 60% strength so theme colors still come through
         const strength = 0.6;
         cR = cR * (1 - strength) + cR * tintR * strength;
         cG = cG * (1 - strength) + cG * tintG * strength;
@@ -274,13 +412,10 @@ export function GalaxyParticles({ settings }: Props) {
       col[i3 + 1] = Math.min(1.0, Math.max(0, cG));
       col[i3 + 2] = Math.min(1.0, Math.max(0, cB));
 
-      // Individual Brightness
       const coreDim = isCoreBulge ? 0.35 : 1.0;
-      // Asymmetry: per-arm brightness weight
-      const armWeight = settings.armAsymmetry ? armWeights[armIndex] : 1.0;
       if (pType === 1.0) {
-        siz[i] = 1.8 + Math.random() * 2.5;
-        bri[i] = (0.15 + Math.random() * 0.25) * coreDim * armWeight;
+        siz[i] = (isOutflow ? 2.4 : 1.8) + Math.random() * 2.5;
+        bri[i] = (0.15 + Math.random() * 0.25) * coreDim * armWeight * (isOutflow ? 1.4 : 1.0);
       } else if (pType === 2.0) {
         siz[i] = 3.0 + Math.random() * 5.0;
         bri[i] = (0.2 + Math.random() * 0.3) * coreDim * armWeight;
@@ -301,7 +436,50 @@ export function GalaxyParticles({ settings }: Props) {
     settings.barStructure,
     settings.armAsymmetry,
     settings.stellarPopulations,
+    morphology,
   ]);
+
+  // ---- Dark dust-lane geometry (multiply layer) ----
+  const dust = useMemo(() => {
+    if (!hasDustLane(morphology)) return null;
+    const isEdgeOn = morphology === "edgeOn";
+    const n = Math.min(Math.floor(settings.particleCount * 0.22), 24000);
+    const dpos = new Float32Array(n * 3);
+    const dsiz = new Float32Array(n);
+    const radialLimit = 15;
+
+    for (let i = 0; i < n; i++) {
+      const i3 = i * 3;
+      if (isEdgeOn) {
+        // Thin equatorial ring — edge-on this becomes the Sombrero's dark band.
+        const rr = 3.0 + Math.pow(Math.random(), 0.7) * (radialLimit - 3.0);
+        const ang = Math.random() * Math.PI * 2;
+        dpos[i3] = Math.cos(ang) * rr;
+        dpos[i3 + 1] = (Math.random() - 0.5) * 0.22;
+        dpos[i3 + 2] = Math.sin(ang) * rr;
+        dsiz[i] = 4.0 + Math.random() * 4.5;
+      } else {
+        // dustLane (M64): a dense crescent sweeping across the near side of the
+        // bright bulge, plus a faint outer disk veil.
+        if (Math.random() < 0.7) {
+          const rr = 1.0 + Math.pow(Math.random(), 0.8) * 3.0;
+          const ang = -1.1 + Math.random() * 2.2; // arc across the front (+Z)
+          dpos[i3] = Math.sin(ang) * rr;
+          dpos[i3 + 1] = (Math.random() - 0.5) * 0.3 + 0.15;
+          dpos[i3 + 2] = Math.abs(Math.cos(ang)) * rr * 0.9 + 0.4;
+          dsiz[i] = 3.5 + Math.random() * 4.0;
+        } else {
+          const rr = 2.0 + Math.random() * (radialLimit - 2.0);
+          const ang = Math.random() * Math.PI * 2;
+          dpos[i3] = Math.cos(ang) * rr;
+          dpos[i3 + 1] = (Math.random() - 0.5) * 0.5;
+          dpos[i3 + 2] = Math.sin(ang) * rr;
+          dsiz[i] = 2.5 + Math.random() * 3.0;
+        }
+      }
+    }
+    return { dpos, dsiz, strength: isEdgeOn ? 0.92 : 0.8 };
+  }, [morphology, settings.particleCount]);
 
   useEffect(() => {
     if (pointsRef.current) {
@@ -314,15 +492,21 @@ export function GalaxyParticles({ settings }: Props) {
     }
   }, [positions, colors, sizes, brightnesses, types]);
 
+  useEffect(() => {
+    if (dustRef.current && dust) {
+      const geo = dustRef.current.geometry;
+      geo.setAttribute("position", new THREE.BufferAttribute(dust.dpos, 3));
+      geo.setAttribute("aSize", new THREE.BufferAttribute(dust.dsiz, 1));
+    }
+  }, [dust]);
+
   useFrame((state, delta) => {
-    if (pointsRef.current) {
-      pointsRef.current.rotation.y += delta * settings.rotationSpeed * 0.1;
+    if (spinRef.current) {
+      spinRef.current.rotation.y += delta * settings.rotationSpeed * 0.1;
     }
     if (materialRef.current) {
       materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-      const count = settings.particleCount;
-      // Linear normalization works much better for additive blending
-      // Keeps total luminosity roughly constant across density levels
+      const count = Math.max(1, settings.particleCount);
       materialRef.current.uniforms.uDensityFactor.value = 60000 / count;
       materialRef.current.uniforms.uBrightness.value = settings.brightness;
       materialRef.current.uniforms.uBloom.value = settings.bloom ? 2.4 : 1.0;
@@ -333,34 +517,56 @@ export function GalaxyParticles({ settings }: Props) {
 
   return (
     <group rotation={[settings.tilt, 0, 0]}>
-      <points ref={pointsRef}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-          <bufferAttribute attach="attributes-aColor" args={[colors, 3]} />
-          <bufferAttribute attach="attributes-aSize" args={[sizes, 1]} />
-          <bufferAttribute attach="attributes-aBrightness" args={[brightnesses, 1]} />
-          <bufferAttribute attach="attributes-aType" args={[types, 1]} />
-        </bufferGeometry>
-        <shaderMaterial
-          ref={materialRef}
-          vertexShader={vertexShader}
-          fragmentShader={fragmentShader}
-          uniforms={{
-            uTime: { value: 0 },
-            uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.0) },
-            uDensityFactor: { value: 1.0 },
-            uBrightness: { value: 1.0 },
-            uBloom: { value: 1.0 },
-            uSoft: { value: 0.0 },
-            uParticle3D: { value: 0.0 },
-          }}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </points>
+      <group ref={spinRef}>
+        <points ref={pointsRef}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+            <bufferAttribute attach="attributes-aColor" args={[colors, 3]} />
+            <bufferAttribute attach="attributes-aSize" args={[sizes, 1]} />
+            <bufferAttribute attach="attributes-aBrightness" args={[brightnesses, 1]} />
+            <bufferAttribute attach="attributes-aType" args={[types, 1]} />
+          </bufferGeometry>
+          <shaderMaterial
+            ref={materialRef}
+            vertexShader={vertexShader}
+            fragmentShader={fragmentShader}
+            uniforms={{
+              uTime: { value: 0 },
+              uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.0) },
+              uDensityFactor: { value: 1.0 },
+              uBrightness: { value: 1.0 },
+              uBloom: { value: 1.0 },
+              uSoft: { value: 0.0 },
+              uParticle3D: { value: 0.0 },
+            }}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </points>
+
+        {dust && (
+          <points ref={dustRef} renderOrder={10}>
+            <bufferGeometry>
+              <bufferAttribute attach="attributes-position" args={[dust.dpos, 3]} />
+              <bufferAttribute attach="attributes-aSize" args={[dust.dsiz, 1]} />
+            </bufferGeometry>
+            <shaderMaterial
+              vertexShader={dustVertexShader}
+              fragmentShader={dustFragmentShader}
+              uniforms={{
+                uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.0) },
+                uDustColor: { value: new THREE.Color(0.22, 0.13, 0.08) },
+                uStrength: { value: dust.strength },
+              }}
+              transparent
+              depthWrite={false}
+              depthTest={false}
+              blending={THREE.MultiplyBlending}
+            />
+          </points>
+        )}
+      </group>
     </group>
   );
 }
-
-function exp(x: number) { return Math.exp(x); }

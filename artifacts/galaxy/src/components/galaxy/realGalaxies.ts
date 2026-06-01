@@ -64,6 +64,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "The nearest large galaxy to the Milky Way and the most distant object visible to the naked eye. On a collision course with our own galaxy, the two will merge in about 4.5 billion years.",
     funFact: "Home to roughly one trillion stars — more than double the Milky Way.",
     settings: {
+      morphology: "grandDesign",
       arms: 2,
       tightness: 0.28,
       tilt: 1.0,
@@ -92,6 +93,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "The classic 'grand-design' spiral, seen face-on with two bold, well-defined arms. Its arms are being tugged by the small companion galaxy NGC 5195 locked in a gravitational dance.",
     funFact: "The first galaxy ever recognized to have a spiral structure, in 1845.",
     settings: {
+      morphology: "grandDesign",
       arms: 2,
       tightness: 0.22,
       tilt: 0.15,
@@ -120,6 +122,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "Famous for its brilliant white bulge and a near edge-on dust lane that gives it the look of a wide-brimmed hat. It harbors one of the most massive black holes measured in any nearby galaxy.",
     funFact: "Surrounded by a swarm of nearly 2,000 globular star clusters.",
     settings: {
+      morphology: "edgeOn",
       arms: 2,
       tightness: 0.6,
       tilt: 1.2,
@@ -146,6 +149,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "A giant face-on spiral nearly twice the size of the Milky Way, with sprawling, asymmetric arms studded with pink star-forming regions. Its lopsided shape comes from past gravitational encounters.",
     funFact: "Contains an estimated one trillion stars across its enormous disk.",
     settings: {
+      morphology: "flocculent",
       arms: 5,
       tightness: 0.15,
       tilt: 0.1,
@@ -173,6 +177,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "The third-largest member of our Local Group and a flocculent spiral with patchy, feathery arms. It is a hotbed of star formation packed with glowing nebulae.",
     funFact: "Home to NGC 604, one of the largest known star-forming nebulae.",
     settings: {
+      morphology: "flocculent",
       arms: 3,
       tightness: 0.18,
       tilt: 0.35,
@@ -199,6 +204,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "A flocculent spiral whose many short, golden arms swirl like sunflower petals. Faint stellar streams around it are the shredded remains of a smaller galaxy it consumed.",
     funFact: "Its arms glow gold from countless newly-formed blue-white star clusters.",
     settings: {
+      morphology: "flocculent",
       arms: 6,
       tightness: 0.5,
       tilt: 0.5,
@@ -224,6 +230,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "A textbook grand-design spiral with sweeping, symmetric arms and a bright yellow core. Its tidy structure was sculpted by interactions with its neighbor, the Cigar Galaxy.",
     funFact: "Its central supermassive black hole is about 70 million solar masses.",
     settings: {
+      morphology: "grandDesign",
       arms: 2,
       tightness: 0.3,
       tilt: 0.45,
@@ -250,6 +257,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "A starburst galaxy seen edge-on, blazing with star formation triggered by a brush with Bode's Galaxy. Red plumes of hydrogen gas erupt from its center in a galactic superwind.",
     funFact: "Forms new stars 10 times faster than the entire Milky Way.",
     settings: {
+      morphology: "starburst",
       arms: 2,
       tightness: 0.9,
       tilt: 1.2,
@@ -274,6 +282,7 @@ export const REAL_GALAXIES: RealGalaxy[] = [
       "Named for the spectacular dark band of dust sweeping in front of its bright core. Its inner and outer regions rotate in opposite directions — a sign of a past galactic merger.",
     funFact: "Its gas spins backwards relative to its stars, fueling fierce star birth.",
     settings: {
+      morphology: "dustLane",
       arms: 2,
       tightness: 0.55,
       tilt: 0.7,

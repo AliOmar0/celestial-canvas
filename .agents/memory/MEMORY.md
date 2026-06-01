@@ -1,0 +1,1 @@
+- [Galaxy dust lanes & morphology](galaxy-particle-rendering.md) — additive blending can't darken; real dark dust lanes need a separate MultiplyBlending points layer. Per-galaxy shape via `morphology` field.

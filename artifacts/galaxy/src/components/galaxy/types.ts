@@ -72,7 +72,21 @@ export const COLOR_THEMES: Record<string, ColorTheme> = {
   },
 };
 
+/**
+ * Particle generation mode. Each value drives a different placement algorithm
+ * in GalaxyParticles so real galaxies can match their photographed shape rather
+ * than all being the same generic spiral.
+ */
+export type GalaxyMorphology =
+  | "spiral" // generic sandbox spiral
+  | "grandDesign" // two bold, tightly-defined arms (M51, M81)
+  | "flocculent" // many short, feathery spur segments (M63, M101, M33)
+  | "edgeOn" // thin disk + big bulge seen edge-on with a dust lane (M104)
+  | "starburst" // elongated cigar body with bipolar gas outflow (M82)
+  | "dustLane"; // smooth disk crossed by a dark dust lane (M64)
+
 export interface GalaxySettings {
+  morphology: GalaxyMorphology;
   arms: number;
   tightness: number;
   rotationSpeed: number;
@@ -106,6 +120,7 @@ export interface GalaxySettings {
 }
 
 export const DEFAULT_SETTINGS: GalaxySettings = {
+  morphology: "spiral",
   arms: 2,
   tightness: 0.1,
   rotationSpeed: 0.0,
