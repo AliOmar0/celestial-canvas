@@ -1,1 +1,1 @@
-- [Galaxy dust lanes & morphology](galaxy-particle-rendering.md) — additive blending can't darken; real dark dust lanes need a separate MultiplyBlending points layer. Per-galaxy shape via `morphology` field.
+- [Galaxy rendering](galaxy-particle-rendering.md) — additive can't darken (dust lanes need MultiplyBlending or skipped pixels); per-galaxy shape via `morphology`; Real Galaxies tab samples the photo into points (no procedural sim, no full spin).

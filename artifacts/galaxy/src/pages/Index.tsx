@@ -222,6 +222,7 @@ const Index = () => {
             setSettings((prev) => ({ ...prev, particleCount: n }))
           }
           registerSnapshot={registerSnapshot}
+          realGalaxyImage={activeGalaxy?.image ?? null}
         />
       </div>
       <ControlPanel
@@ -254,6 +255,10 @@ const Index = () => {
         visible={infoVisible}
         onToggle={() => setInfoVisible((v) => !v)}
         onOpenGallery={() => setGalleryOpen(true)}
+        onExit={() => {
+          setActiveGalaxy(null);
+          setInfoVisible(false);
+        }}
       />
       <WarpTransition active={warping} />
 

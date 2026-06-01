@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Info, X, Telescope } from "lucide-react";
+import { Info, X, Telescope, Sparkles } from "lucide-react";
 import type { RealGalaxy } from "./realGalaxies";
 
 interface GalaxyInfoProps {
@@ -7,6 +7,7 @@ interface GalaxyInfoProps {
   visible: boolean;
   onToggle: () => void;
   onOpenGallery: () => void;
+  onExit: () => void;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -18,7 +19,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function GalaxyInfo({ galaxy, visible, onToggle, onOpenGallery }: GalaxyInfoProps) {
+export function GalaxyInfo({ galaxy, visible, onToggle, onOpenGallery, onExit }: GalaxyInfoProps) {
   if (!galaxy) return null;
 
   return (
@@ -72,6 +73,14 @@ export function GalaxyInfo({ galaxy, visible, onToggle, onOpenGallery }: GalaxyI
               >
                 <Telescope className="w-3.5 h-3.5" />
                 Travel to another galaxy
+              </button>
+
+              <button
+                onClick={onExit}
+                className="mt-2 w-full py-2 rounded-lg bg-transparent hover:bg-white/[0.06] border border-white/10 text-white/55 hover:text-white/80 text-[12.5px] font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Back to galaxy builder
               </button>
             </div>
           </motion.div>

@@ -9,6 +9,7 @@ import {
 import { BlendFunction, KernelSize } from "postprocessing";
 import { Vector2 } from "three";
 import { GalaxyParticles } from "./GalaxyParticles";
+import { ImageGalaxy } from "./ImageGalaxy";
 import { Starfield } from "./Starfield";
 import { Galaxy2D } from "./Galaxy2D";
 import { COLOR_THEMES, type GalaxySettings } from "./types";
@@ -724,9 +725,12 @@ interface Props {
   settings: GalaxySettings;
   onAdaptiveDensityChange: (n: number) => void;
   registerSnapshot?: (fn: () => string | null) => void;
+  /** When set, the Real Galaxies tab renders this galaxy's actual photo as a
+   *  3D point cloud instead of the procedural particle simulation. */
+  realGalaxyImage?: string | null;
 }
 
-export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapshot }: Props) {
+export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapshot, realGalaxyImage }: Props) {
   const [isWebGLAvailable, setIsWebGLAvailable] = useState<boolean | null>(null);
   const chromaticOffset = useMemo(() => new Vector2(0.0006, 0.0009), []);
 
@@ -779,54 +783,69 @@ export function GalaxyScene({ settings, onAdaptiveDensityChange, registerSnapsho
           style={{ background: "transparent" }}
           dpr={dpr}
         >
-          <GalaxyParticles settings={settings} />
+          {realGalaxyImage ? (
+            // Real Galaxies tab: render the actual NASA photo as a 3D point
+            // cloud. Procedural structure components are skipped — the photo
+            // already contains the bulge, arms, dust lanes and clusters — which
+            // also makes this mode much lighter to render.
+            <ImageGalaxy
+              src={realGalaxyImage}
+              brightness={settings.brightness}
+              rotationSpeed={settings.rotationSpeed}
+              bloom={settings.bloom}
+            />
+          ) : (
+            <>
+              <GalaxyParticles settings={settings} />
+              {settings.distantGalaxies && (
+                <DistantGalaxies count={settings.distantGalaxyCount} />
+              )}
+              {settings.globularClusters && (
+                <group rotation={[settings.tilt, 0, 0]}>
+                  <GlobularClusters />
+                </group>
+              )}
+              {settings.companionGalaxy && (
+                <group rotation={[settings.tilt, 0, 0]}>
+                  <CompanionGalaxy themeKey={settings.theme} brightness={settings.brightness} />
+                </group>
+              )}
+              {settings.hiiRegions && (
+                <group rotation={[settings.tilt, 0, 0]}>
+                  <HIIRegions arms={settings.arms} tightness={settings.tightness} />
+                </group>
+              )}
+              {settings.openClusters && (
+                <group rotation={[settings.tilt, 0, 0]}>
+                  <OpenClusters arms={settings.arms} tightness={settings.tightness} />
+                </group>
+              )}
+              {settings.blackHole && (
+                <group rotation={[settings.tilt, 0, 0]}>
+                  <BlackHole themeKey={settings.theme} />
+                </group>
+              )}
+              {settings.regionLabels && (
+                <group rotation={[settings.tilt, 0, 0]}>
+                  <RegionLabels />
+                </group>
+              )}
+              <FlyThrough active={settings.flyThrough} />
+              <AdaptiveQuality
+                enabled={settings.adaptiveQuality}
+                currentCount={settings.particleCount}
+                onChange={onAdaptiveDensityChange}
+              />
+            </>
+          )}
           <Starfield />
-          {settings.distantGalaxies && (
-            <DistantGalaxies count={settings.distantGalaxyCount} />
-          )}
-          {settings.globularClusters && (
-            <group rotation={[settings.tilt, 0, 0]}>
-              <GlobularClusters />
-            </group>
-          )}
-          {settings.companionGalaxy && (
-            <group rotation={[settings.tilt, 0, 0]}>
-              <CompanionGalaxy themeKey={settings.theme} brightness={settings.brightness} />
-            </group>
-          )}
-          {settings.hiiRegions && (
-            <group rotation={[settings.tilt, 0, 0]}>
-              <HIIRegions arms={settings.arms} tightness={settings.tightness} />
-            </group>
-          )}
-          {settings.openClusters && (
-            <group rotation={[settings.tilt, 0, 0]}>
-              <OpenClusters arms={settings.arms} tightness={settings.tightness} />
-            </group>
-          )}
-          {settings.blackHole && (
-            <group rotation={[settings.tilt, 0, 0]}>
-              <BlackHole themeKey={settings.theme} />
-            </group>
-          )}
-          {settings.regionLabels && (
-            <group rotation={[settings.tilt, 0, 0]}>
-              <RegionLabels />
-            </group>
-          )}
-          <FlyThrough active={settings.flyThrough} />
-          <AdaptiveQuality
-            enabled={settings.adaptiveQuality}
-            currentCount={settings.particleCount}
-            onChange={onAdaptiveDensityChange}
-          />
           {registerSnapshot && <SnapshotBridge register={registerSnapshot} />}
-          {!settings.flyThrough && (
+          {(!settings.flyThrough || !!realGalaxyImage) && (
             <OrbitControls
               enablePan={false}
               minDistance={5}
               maxDistance={50}
-              autoRotate={settings.autoRotate}
+              autoRotate={!realGalaxyImage && settings.autoRotate}
               autoRotateSpeed={0.3}
               enableDamping
               dampingFactor={0.05}

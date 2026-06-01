@@ -28,3 +28,21 @@ spread + low inter-arm floor). Presets assign it in `realGalaxies.ts`.
 Galaxy Y-rotation lives on an inner `<group ref={spinRef}>` (rotated in useFrame), NOT on the
 star `points` — otherwise the dust lane wouldn't rotate with the stars. Outer group keeps the
 static `tilt`.
+
+## Real galaxies: sample the photo into points instead of simulating
+The "Real Galaxies" tab does NOT use the procedural engine. It samples each galaxy's bundled
+NASA photo into a point cloud (`ImageGalaxy.tsx`): colors/dust lanes/arms come straight from the
+pixels, which matches the photo far better than any procedural spiral AND is cheaper (no
+BlackHole/clusters/HII/AdaptiveQuality components run in this mode).
+**Why two non-obvious constraints drive its design:**
+- A photo is flat. Never apply a full Y-spin (autoRotate off in image mode) — it would turn the
+  plane edge-on and vanish. Use gentle bounded sway + a luminance depth "dome" (+Z) for 2.5D
+  parallax instead.
+- Dark dust/sky needs NO special trick here: pixels below a luminance threshold are simply
+  skipped, so absorption lanes read as the absence of points (additive can't darken — see top).
+**How to apply:** the renderer is selected by GalaxyScene's `realGalaxyImage` prop (set from
+`activeGalaxy.image`); when set it branches to ImageGalaxy and skips ALL procedural feature
+components. Geometry is declarative `<bufferAttribute>` only — do NOT also `setAttribute`
+imperatively (double buffers leak GPU memory); force a clean remount via `key={src}` plus the
+`setGeom(null)`-on-src-change reset so R3F disposes the old geometry. Shape sliders no-op in this
+mode, so there must always be an exit back to the builder (clears `activeGalaxy`).
