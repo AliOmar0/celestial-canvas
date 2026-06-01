@@ -1,10 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, MousePointer2, Settings, X } from "lucide-react";
+import { Sparkles, MousePointer2, Settings, X, Telescope } from "lucide-react";
 import { GalaxyScene } from "@/components/galaxy/GalaxyScene";
 import { ControlPanel } from "@/components/galaxy/ControlPanel";
 import { NebulaBackground } from "@/components/galaxy/NebulaBackground";
 import { AmbientSound } from "@/components/galaxy/AmbientSound";
+import { GalaxyGallery } from "@/components/galaxy/GalaxyGallery";
+import { GalaxyInfo } from "@/components/galaxy/GalaxyInfo";
+import { WarpTransition } from "@/components/galaxy/WarpTransition";
+import { REAL_GALAXIES, GALAXY_RESET, type RealGalaxy } from "@/components/galaxy/realGalaxies";
 import { DEFAULT_SETTINGS, type GalaxySettings } from "@/components/galaxy/types";
 
 const WELCOME_KEY = "galaxy-welcome-seen-v1";
@@ -68,6 +72,12 @@ function WelcomeOverlay({ onClose }: { onClose: () => void }) {
               <Sparkles className="w-3.5 h-3.5" />
             </span>
             Try a preset, or hit Random for inspiration
+          </li>
+          <li className="flex items-center gap-3 text-[12.5px] text-white/65">
+            <span className="w-7 h-7 shrink-0 rounded-md bg-white/5 border border-white/10 flex items-center justify-center text-white/70">
+              <Telescope className="w-3.5 h-3.5" />
+            </span>
+            Or warp to a real NASA galaxy — top center
           </li>
         </ul>
         <button
@@ -134,6 +144,35 @@ const Index = () => {
   }, []);
   const snapshotFnRef = useRef<(() => string | null) | null>(null);
 
+  // Real-galaxy gallery + warp state
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [warping, setWarping] = useState(false);
+  const [activeGalaxy, setActiveGalaxy] = useState<RealGalaxy | null>(null);
+  const [infoVisible, setInfoVisible] = useState(true);
+  const warpTimers = useRef<number[]>([]);
+
+  useEffect(() => {
+    return () => warpTimers.current.forEach((t) => window.clearTimeout(t));
+  }, []);
+
+  const selectGalaxy = useCallback((galaxy: RealGalaxy) => {
+    // Ignore re-selection mid-warp so the flash-synced settings swap can't desync.
+    if (warping) return;
+    warpTimers.current.forEach((t) => window.clearTimeout(t));
+    warpTimers.current = [];
+    setGalleryOpen(false);
+    setWarping(true);
+    // Swap the galaxy at the peak of the warp flash so regeneration stays hidden.
+    warpTimers.current.push(
+      window.setTimeout(() => {
+        setSettings((prev) => ({ ...prev, ...GALAXY_RESET, ...galaxy.settings }));
+        setActiveGalaxy(galaxy);
+        setInfoVisible(true);
+      }, 780)
+    );
+    warpTimers.current.push(window.setTimeout(() => setWarping(false), 1500));
+  }, [warping]);
+
   // Sync settings → URL hash (debounced) so the URL is always shareable.
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -191,6 +230,33 @@ const Index = () => {
         onSnapshot={takeSnapshot}
         onShare={shareLink}
       />
+
+      {/* Real-galaxy gallery launcher (top center) */}
+      <motion.button
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        onClick={() => setGalleryOpen(true)}
+        className="fixed top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-zinc-950/70 backdrop-blur-xl border border-white/10 hover:border-white/30 pl-3 pr-4 py-2 text-white/85 hover:text-white transition-colors shadow-[0_10px_40px_-12px_rgba(168,85,247,0.5)]"
+      >
+        <Telescope className="w-4 h-4 text-fuchsia-300" />
+        <span className="text-[12.5px] font-medium tracking-tight">Real Galaxies</span>
+      </motion.button>
+
+      <GalaxyGallery
+        open={galleryOpen}
+        activeId={activeGalaxy?.id ?? null}
+        onClose={() => setGalleryOpen(false)}
+        onSelect={selectGalaxy}
+      />
+      <GalaxyInfo
+        galaxy={activeGalaxy}
+        visible={infoVisible}
+        onToggle={() => setInfoVisible((v) => !v)}
+        onOpenGallery={() => setGalleryOpen(true)}
+      />
+      <WarpTransition active={warping} />
+
       <AmbientSound active={settings.ambientSound} intensity={settings.rotationSpeed} />
       {/* Cinematic vignette */}
       <div
